@@ -45,7 +45,7 @@ import {
   ExternalLink,
   MessageCircle,
   HandCoins,
-  PieChart,
+  PieChart as PieChartIcon,
   Sliders,
   Sparkles,
 } from "lucide-react";
@@ -237,7 +237,7 @@ const SECCIONES = [
   { id: "dashboard", label: "Panel de Control", icon: LayoutDashboard },
   { id: "ingresos", label: "Ingresos", icon: HandCoins },
   { id: "tarjetas", label: "Cuotas de Tarjetas", icon: CreditCard },
-  { id: "gastos", label: "Gastos Mensuales", icon: PieChart },
+  { id: "gastos", label: "Gastos Mensuales", icon: PieChartIcon },
   { id: "calculos", label: "Cálculos Adicionales", icon: Calculator },
   { id: "inversion", label: "Inversión", icon: LineChart },
   { id: "configuracion", label: "Configuración", icon: Sliders },
