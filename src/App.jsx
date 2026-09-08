@@ -45,7 +45,7 @@ import {
   ExternalLink,
   MessageCircle,
   HandCoins,
-  PieChart as PieChartIcon,
+  PieChart,
   Sliders,
   Sparkles,
 } from "lucide-react";
@@ -237,7 +237,7 @@ const SECCIONES = [
   { id: "dashboard", label: "Panel de Control", icon: LayoutDashboard },
   { id: "ingresos", label: "Ingresos", icon: HandCoins },
   { id: "tarjetas", label: "Cuotas de Tarjetas", icon: CreditCard },
-  { id: "gastos", label: "Gastos Mensuales", icon: PieChartIcon },
+  { id: "gastos", label: "Gastos Mensuales", icon: PieChart },
   { id: "calculos", label: "Cálculos Adicionales", icon: Calculator },
   { id: "inversion", label: "Inversión", icon: LineChart },
   { id: "configuracion", label: "Configuración", icon: Sliders },
@@ -259,6 +259,7 @@ export default function FinanzasFamiliares() {
 
   // ---- Detalle de tarjetas ----
   const [cargosPorTarjeta, setCargosPorTarjeta] = useState(CARGOS_INICIALES);
+  const [saldosTarjetas, setSaldosTarjetas] = useState({}); // { [tarjetaId]: saldo } — viene de la tabla "tarjetas", mantenida por tu trigger
   const [cargandoDatos, setCargandoDatos] = useState(true);
   const [arrastrando, setArrastrando] = useState(null); // { tarjetaId, cargoId }
   const [editando, setEditando] = useState(null); // "tarjetaId:cargoId:campo"
@@ -290,6 +291,14 @@ export default function FinanzasFamiliares() {
   useEffect(() => {
     const cargarDatos = async () => {
       try {
+        // Saldo real de cada tarjeta (columna mantenida por tu trigger de Postgres)
+        const { data: tarjetasDb } = await supabase.from("tarjetas").select("id, saldo");
+        if (tarjetasDb && tarjetasDb.length > 0) {
+          const saldos = {};
+          tarjetasDb.forEach((t) => (saldos[t.id] = Number(t.saldo) || 0));
+          setSaldosTarjetas(saldos);
+        }
+
         // Categorías
         const { data: catsDb } = await supabase.from("categorias_gasto").select("*");
         if (catsDb && catsDb.length > 0) {
@@ -813,12 +822,15 @@ export default function FinanzasFamiliares() {
   const gastosTarjetasEnMes = (i) =>
     TARJETAS.reduce((acc, t) => acc + totalTarjetaEnMes(cargosPorTarjeta[t.id], i), 0);
   const gastosFijosMensuales = gastosMensuales.filter((g) => !g.esTarjeta).reduce((acc, g) => acc + g.monto, 0);
+  // Suma del campo "saldo" de la tabla tarjetas — se mantiene solo con tu trigger de Postgres
+  // cada vez que se inserta un cargo, así que este es el total real y actualizado de las 4 tarjetas.
+  const sumaSaldosTarjetas = Object.values(saldosTarjetas).reduce((acc, s) => acc + (Number(s) || 0), 0);
 
   const ingresoArielMes = sueldos.ariel.montosPorMes[mesIndex];
   const ingresoCieloMes = sueldos.cielo.montosPorMes[mesIndex];
   const totalIngresosExtra = ingresosExtra.reduce((acc, ig) => acc + ig.monto, 0);
   const ingresosTotalesMes = ingresoArielMes + ingresoCieloMes + totalIngresosExtra;
-  const gastosTarjetasMes = gastosTarjetasEnMes(mesIndex);
+  const gastosTarjetasMes = sumaSaldosTarjetas;
   const gastosTotalesMes = gastosTarjetasMes + gastosFijosMensuales;
   const ahorroProyectado = ingresosTotalesMes - gastosTotalesMes;
   const pagadoMes = gastosMensuales.filter((g) => g.pagado).reduce((acc, g) => acc + g.monto, 0);
