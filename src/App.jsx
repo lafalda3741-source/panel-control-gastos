@@ -214,10 +214,14 @@ const CARGOS_INICIALES = {
   ],
 };
 
-// Valor de un cargo en un mes dado: recurrente se repite siempre, con cuotas se apaga al terminar.
+// Valor de un cargo en un mes dado: recurrente se repite desde que arranca,
+// con cuotas se apaga al terminar. Respeta el mes de inicio de cada cargo
+// (antes de eso, o después de terminar, no aparece).
 function valorCargoEnMes(cargo, mesIndex) {
+  const inicio = cargo.mesInicio || 0;
+  if (mesIndex < inicio) return null;
   if (cargo.cuotaTotal == null) return cargo.monto;
-  return mesIndex < cargo.cuotaTotal ? cargo.monto : null;
+  return mesIndex < inicio + cargo.cuotaTotal ? cargo.monto : null;
 }
 
 // Suma de todos los cargos de una tarjeta en un mes dado (para el total que alimenta Gastos Mensuales).
@@ -270,6 +274,7 @@ export default function FinanzasFamiliares() {
     descripcion: "",
     montoTotal: "",
     cantidadCuotas: "",
+    mesInicio: 1,
   });
 
   const valorEnMes = valorCargoEnMes;
@@ -320,7 +325,7 @@ export default function FinanzasFamiliares() {
           TARJETAS.forEach((t) => (agrupados[t.id] = []));
           cargosDb.forEach((c) => {
             if (!agrupados[c.tarjeta_id]) agrupados[c.tarjeta_id] = [];
-            agrupados[c.tarjeta_id].push({ id: c.id, nombre: c.nombre, monto: Number(c.monto), cuotaTotal: c.cuota_total });
+            agrupados[c.tarjeta_id].push({ id: c.id, nombre: c.nombre, monto: Number(c.monto), cuotaTotal: c.cuota_total, mesInicio: c.mes_inicio || 0 });
           });
           setCargosPorTarjeta(agrupados);
         } else {
@@ -758,12 +763,14 @@ export default function FinanzasFamiliares() {
     const esCuotas = formCarga.tipo === "cuotas";
     const cuotas = esCuotas ? Number(formCarga.cantidadCuotas) || 1 : null;
     const montoPorMes = esCuotas ? Number(formCarga.montoTotal) / cuotas : Number(formCarga.montoTotal);
+    const mesInicio = Number(formCarga.mesInicio) || 0;
 
     const nuevo = {
       id: `c${Date.now()}`,
       nombre: formCarga.descripcion.trim(),
       monto: montoPorMes,
       cuotaTotal: cuotas,
+      mesInicio,
     };
     setCargosPorTarjeta((prev) => ({
       ...prev,
@@ -777,12 +784,13 @@ export default function FinanzasFamiliares() {
         nombre: nuevo.nombre,
         monto: nuevo.monto,
         cuota_total: nuevo.cuotaTotal,
+        mes_inicio: mesInicio,
         orden: (cargosPorTarjeta[formCarga.tarjetaId] || []).length,
       })
       .then(({ error }) => {
         if (error) console.error("Error guardando cargo:", error);
       });
-    setFormCarga({ tarjetaId: formCarga.tarjetaId, tipo: "cuotas", descripcion: "", montoTotal: "", cantidadCuotas: "" });
+    setFormCarga({ tarjetaId: formCarga.tarjetaId, tipo: "cuotas", descripcion: "", montoTotal: "", cantidadCuotas: "", mesInicio });
     setModalNuevaCarga(false);
   };
 
@@ -2369,7 +2377,10 @@ export default function FinanzasFamiliares() {
                 </p>
               </div>
               <button
-                onClick={() => setModalNuevaCarga(true)}
+                onClick={() => {
+                  setFormCarga((prev) => ({ ...prev, mesInicio: mesIndex }));
+                  setModalNuevaCarga(true);
+                }}
                 className="flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-medium text-white shrink-0 whitespace-nowrap"
                 style={{ background: TOKENS.gold }}
               >
@@ -2653,6 +2664,19 @@ export default function FinanzasFamiliares() {
                 className="w-full rounded-xl px-3.5 py-2.5 text-sm mb-4 border outline-none"
                 style={{ background: TOKENS.bg, borderColor: TOKENS.surfaceBorder, color: TOKENS.text }}
               />
+
+              {/* Mes de inicio — precargado con el mes del selector global, pero editable */}
+              <label className="block text-xs font-medium mb-1.5" style={{ color: TOKENS.muted }}>Mes de inicio</label>
+              <select
+                value={formCarga.mesInicio}
+                onChange={(e) => setFormCarga({ ...formCarga, mesInicio: Number(e.target.value) })}
+                className="w-full rounded-xl px-3.5 py-2.5 text-sm mb-4 border outline-none"
+                style={{ background: TOKENS.bg, borderColor: TOKENS.surfaceBorder, color: TOKENS.text }}
+              >
+                {MESES.map((m, i) => (
+                  <option key={m} value={i}>{m}</option>
+                ))}
+              </select>
 
               {/* Monto total + Cantidad de cuotas: en columna en mobile, en fila en desktop */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3 md:mb-4">
