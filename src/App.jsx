@@ -325,7 +325,7 @@ export default function FinanzasFamiliares() {
           TARJETAS.forEach((t) => (agrupados[t.id] = []));
           cargosDb.forEach((c) => {
             if (!agrupados[c.tarjeta_id]) agrupados[c.tarjeta_id] = [];
-            agrupados[c.tarjeta_id].push({ id: c.id, nombre: c.nombre, monto: Number(c.monto), cuotaTotal: c.cuota_total, mesInicio: c.mes_inicio || 0 });
+            agrupados[c.tarjeta_id].push({ id: c.id, nombre: c.nombre, monto: Number(c.monto), cuotaTotal: c.cuota_total, mesInicio: Number.isFinite(Number(c.mes_inicio)) ? Number(c.mes_inicio) : 0 });
           });
           setCargosPorTarjeta(agrupados);
         } else {
@@ -340,9 +340,29 @@ export default function FinanzasFamiliares() {
 
         // Gastos mensuales
         const { data: gastosDb } = await supabase.from("gastos_mensuales").select("*");
-        if (gastosDb && gastosDb.length > 0) {
+        let listaGastos = gastosDb || [];
+
+        // Reparación automática: si falta alguna de las 4 tarjetas (por ejemplo, si
+        // alguna vez se borró sin querer), la vuelve a crear.
+        const idsTarjetaPresentes = new Set(listaGastos.filter((g) => g.es_tarjeta).map((g) => g.tarjeta_id));
+        const faltantesTarjeta = TARJETAS.filter((t) => !idsTarjetaPresentes.has(t.id));
+        if (faltantesTarjeta.length > 0) {
+          const nuevasFilas = faltantesTarjeta.map((t) => ({
+            id: `gm-${t.id}`,
+            tarjeta_id: t.id,
+            nombre: t.nombre,
+            monto: totalTarjetaEnMes(CARGOS_INICIALES[t.id], 0),
+            es_tarjeta: true,
+            categoria_id: "cat-tarjetas",
+            pagado: false,
+          }));
+          const { error } = await supabase.from("gastos_mensuales").insert(nuevasFilas);
+          if (!error) listaGastos = [...listaGastos, ...nuevasFilas];
+        }
+
+        if (listaGastos.length > 0) {
           setGastosMensuales(
-            gastosDb.map((g) => ({
+            listaGastos.map((g) => ({
               id: g.id,
               nombre: g.nombre,
               monto: Number(g.monto),
@@ -352,18 +372,41 @@ export default function FinanzasFamiliares() {
               pagado: g.pagado,
             }))
           );
-        } else {
-          const iniciales = TARJETAS.map((t) => ({
-            id: `gm-${t.id}`,
-            tarjeta_id: t.id,
-            nombre: t.nombre,
-            monto: totalTarjetaEnMes(CARGOS_INICIALES[t.id], 0),
-            es_tarjeta: true,
-            categoria_id: "cat-tarjetas",
-            pagado: false,
-          }));
-          await supabase.from("gastos_mensuales").insert(iniciales);
         }
+
+        // Sueldos de Ariel y Cielo (compartidos con la app móvil)
+        const { data: sueldosDb } = await supabase.from("sueldos").select("*");
+        const nuevosSueldos = {
+          ariel: { titular: "Ariel", montosPorMes: Array(MESES.length).fill(850000), aumentoPorc: "", aumentosPorMes: {} },
+          cielo: { titular: "Cielo", montosPorMes: Array(MESES.length).fill(620000), aumentoPorc: "", aumentosPorMes: {} },
+        };
+        const faltantesSueldo = [];
+        for (const key of ["ariel", "cielo"]) {
+          const fila = (sueldosDb || []).find((s) => s.persona === key);
+          if (fila) {
+            nuevosSueldos[key] = {
+              titular: fila.titular,
+              montosPorMes: fila.montos_por_mes && fila.montos_por_mes.length ? fila.montos_por_mes : nuevosSueldos[key].montosPorMes,
+              aumentoPorc: "",
+              aumentosPorMes: fila.aumentos_por_mes || {},
+            };
+          } else {
+            faltantesSueldo.push(key);
+          }
+        }
+        setSueldos(nuevosSueldos);
+        for (const key of faltantesSueldo) {
+          await supabase.from("sueldos").insert({
+            persona: key,
+            titular: nuevosSueldos[key].titular,
+            montos_por_mes: nuevosSueldos[key].montosPorMes,
+            aumentos_por_mes: {},
+          });
+        }
+
+        // Otros ingresos
+        const { data: ingresosExtraDb } = await supabase.from("ingresos_extra").select("*");
+        setIngresosExtra((ingresosExtraDb || []).map((ig) => ({ id: ig.id, nombre: ig.nombre, monto: Number(ig.monto) })));
       } catch (err) {
         console.error("Error cargando datos de Supabase, se sigue con los datos locales:", err);
       } finally {
@@ -533,6 +576,9 @@ export default function FinanzasFamiliares() {
       const s = prev[persona];
       const nuevos = [...s.montosPorMes];
       nuevos[mesIndex] = valor; // corrige solo el mes que se está viendo
+      supabase.from("sueldos").update({ montos_por_mes: nuevos }).eq("persona", persona).then(({ error }) => {
+        if (error) console.error("Error actualizando sueldo:", error);
+      });
       return { ...prev, [persona]: { ...s, montosPorMes: nuevos } };
     });
   };
@@ -550,12 +596,20 @@ export default function FinanzasFamiliares() {
       const nuevoMonto = Math.round(montoAnterior * (1 + porc / 100));
       const nuevosMontos = [...s.montosPorMes];
       for (let i = mesIndex; i < nuevosMontos.length; i++) nuevosMontos[i] = nuevoMonto; // se propaga hacia adelante
+      const nuevosAumentos = { ...s.aumentosPorMes, [mesIndex]: { porc, anterior: montoAnterior, nuevo: nuevoMonto } };
+      supabase
+        .from("sueldos")
+        .update({ montos_por_mes: nuevosMontos, aumentos_por_mes: nuevosAumentos })
+        .eq("persona", persona)
+        .then(({ error }) => {
+          if (error) console.error("Error aplicando aumento:", error);
+        });
       return {
         ...prev,
         [persona]: {
           ...s,
           montosPorMes: nuevosMontos,
-          aumentosPorMes: { ...s.aumentosPorMes, [mesIndex]: { porc, anterior: montoAnterior, nuevo: nuevoMonto } },
+          aumentosPorMes: nuevosAumentos,
           aumentoPorc: "",
         },
       };
@@ -571,15 +625,25 @@ export default function FinanzasFamiliares() {
 
   const actualizarCampoIngresoExtra = (id, campo, valor) => {
     setIngresosExtra((prev) => prev.map((ig) => (ig.id === id ? { ...ig, [campo]: valor } : ig)));
+    supabase.from("ingresos_extra").update({ [campo]: valor }).eq("id", id).then(({ error }) => {
+      if (error) console.error("Error actualizando ingreso extra:", error);
+    });
   };
 
   const eliminarIngresoExtra = (id) => {
     setIngresosExtra((prev) => prev.filter((ig) => ig.id !== id));
+    supabase.from("ingresos_extra").delete().eq("id", id).then(({ error }) => {
+      if (error) console.error("Error eliminando ingreso extra:", error);
+    });
   };
 
   const agregarIngresoExtra = () => {
     if (!formIngreso.nombre.trim() || !formIngreso.monto) return;
-    setIngresosExtra((prev) => [...prev, { id: `ig${Date.now()}`, nombre: formIngreso.nombre.trim(), monto: Number(formIngreso.monto) }]);
+    const nuevo = { id: `ig${Date.now()}`, nombre: formIngreso.nombre.trim(), monto: Number(formIngreso.monto) };
+    setIngresosExtra((prev) => [...prev, nuevo]);
+    supabase.from("ingresos_extra").insert(nuevo).then(({ error }) => {
+      if (error) console.error("Error guardando ingreso extra:", error);
+    });
     setFormIngreso({ nombre: "", monto: "" });
     setModalNuevoIngreso(false);
   };
@@ -841,7 +905,9 @@ export default function FinanzasFamiliares() {
   const gastosTarjetasMes = sumaSaldosTarjetas;
   const gastosTotalesMes = gastosTarjetasMes + gastosFijosMensuales;
   const ahorroProyectado = ingresosTotalesMes - gastosTotalesMes;
-  const pagadoMes = gastosMensuales.filter((g) => g.pagado).reduce((acc, g) => acc + g.monto, 0);
+  const pagadoMes = gastosMensuales
+    .filter((g) => g.pagado)
+    .reduce((acc, g) => acc + (g.esTarjeta ? (saldosTarjetas[g.tarjetaId] ?? g.monto) : g.monto), 0);
   const pendienteMes = gastosTotalesMes - pagadoMes;
   const ahorroReal = ingresosTotalesMes - pagadoMes;
   const aporteAriel = ingresosTotalesMes > 0 ? gastosTotalesMes * (ingresoArielMes / ingresosTotalesMes) : 0;
@@ -991,7 +1057,7 @@ export default function FinanzasFamiliares() {
         </div>
       </div>
 
-      {editandoGasto === `${g.id}:monto` ? (
+      {editandoGasto === `${g.id}:monto` && !g.esTarjeta ? (
         <input
           autoFocus
           type="number"
@@ -1010,25 +1076,27 @@ export default function FinanzasFamiliares() {
         />
       ) : (
         <span
-          className="text-sm md:text-base font-medium tabular shrink-0 cursor-text rounded px-1 hover:bg-black/5 transition-colors mt-0.5"
+          className={g.esTarjeta ? "text-sm md:text-base font-medium tabular shrink-0 mt-0.5" : "text-sm md:text-base font-medium tabular shrink-0 cursor-text rounded px-1 hover:bg-black/5 transition-colors mt-0.5"}
           style={{
             color: g.pagado ? TOKENS.muted : TOKENS.text,
             textDecoration: g.pagado ? "line-through" : "none",
           }}
-          onClick={() => setEditandoGasto(`${g.id}:monto`)}
-          title="Tocar para editar"
+          onClick={g.esTarjeta ? undefined : () => setEditandoGasto(`${g.id}:monto`)}
+          title={g.esTarjeta ? "Se actualiza solo desde el saldo de la tarjeta" : "Tocar para editar"}
         >
-          {fmt(g.monto)}
+          {fmt(g.esTarjeta ? totalTarjetaEnMes(cargosPorTarjeta[g.tarjetaId], mesIndex) : g.monto)}
         </span>
       )}
 
-      <button
-        onClick={() => eliminarGastoMensual(g.id)}
-        className="ml-1 mt-1 opacity-40 hover:opacity-90 transition-opacity shrink-0"
-        aria-label={`Eliminar ${g.nombre}`}
-      >
-        <X size={14} style={{ color: TOKENS.muted }} />
-      </button>
+      {!g.esTarjeta && (
+        <button
+          onClick={() => eliminarGastoMensual(g.id)}
+          className="ml-1 mt-1 opacity-40 hover:opacity-90 transition-opacity shrink-0"
+          aria-label={`Eliminar ${g.nombre}`}
+        >
+          <X size={14} style={{ color: TOKENS.muted }} />
+        </button>
+      )}
     </div>
   );
 
@@ -1587,8 +1655,9 @@ export default function FinanzasFamiliares() {
 
             {/* Resumen: Total / Pagado / Pendiente */}
             {(() => {
-              const totalGeneral = gastosMensuales.reduce((acc, g) => acc + g.monto, 0);
-              const pagadoGeneral = gastosMensuales.filter((g) => g.pagado).reduce((acc, g) => acc + g.monto, 0);
+              const montoReal = (g) => (g.esTarjeta ? totalTarjetaEnMes(cargosPorTarjeta[g.tarjetaId], mesIndex) : g.monto);
+              const totalGeneral = gastosMensuales.reduce((acc, g) => acc + montoReal(g), 0);
+              const pagadoGeneral = gastosMensuales.filter((g) => g.pagado).reduce((acc, g) => acc + montoReal(g), 0);
               const pendienteGeneral = totalGeneral - pagadoGeneral;
               const saldoRestanteGeneral = ingresosTotalesMes - totalGeneral;
               return (
