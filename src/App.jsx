@@ -414,7 +414,7 @@ export default function FinanzasFamiliares() {
       }
     };
     cargarDatos();
-  }, []);
+  }, [seccionActiva]);
 
   const agregarCategoria = () => {
     if (!formCategoria.nombre.trim()) return;
@@ -526,6 +526,8 @@ export default function FinanzasFamiliares() {
   };
 
   const eliminarGastoMensual = (gastoId) => {
+    const gasto = gastosMensuales.find((g) => g.id === gastoId);
+    if (!window.confirm(`¿Seguro que querés eliminar "${gasto?.nombre || "este gasto"}"?`)) return;
     setGastosMensuales((prev) => prev.filter((g) => g.id !== gastoId));
     supabase.from("gastos_mensuales").delete().eq("id", gastoId).then(({ error }) => {
       if (error) console.error("Error eliminando gasto mensual:", error);
@@ -776,6 +778,8 @@ export default function FinanzasFamiliares() {
   };
 
   const eliminarCargo = (tarjetaId, cargoId) => {
+    const cargo = (cargosPorTarjeta[tarjetaId] || []).find((c) => c.id === cargoId);
+    if (!window.confirm(`¿Seguro que querés eliminar "${cargo?.nombre || "este cargo"}"?`)) return;
     setCargosPorTarjeta((prev) => ({
       ...prev,
       [tarjetaId]: prev[tarjetaId].filter((c) => c.id !== cargoId),
@@ -2567,6 +2571,9 @@ export default function FinanzasFamiliares() {
                                       1/{c.cuotaTotal}
                                     </span>
                                   )}
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded-full whitespace-nowrap" style={{ background: TOKENS.surfaceBorder, color: TOKENS.muted }}>
+                                    desde {MESES[c.mesInicio || 0]}
+                                  </span>
                                   <button
                                     onClick={() => eliminarCargo(t.id, c.id)}
                                     className="ml-0.5 opacity-40 hover:opacity-90 transition-opacity"
