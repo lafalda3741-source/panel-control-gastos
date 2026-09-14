@@ -155,6 +155,15 @@ function FontImport() {
 
 const MESES = ["Ago 2026", "Sep 2026", "Oct 2026", "Nov 2026", "Dic 2026", "Ene 2027", "Feb 2027", "Mar 2027", "Abr 2027"];
 
+// Mismo anclaje que la función SQL mes_actual_index() (Ago 2026 = índice 0).
+function mesActualIndex() {
+  const hoy = new Date();
+  return (hoy.getFullYear() - 2026) * 12 + (hoy.getMonth() - 7);
+}
+function proximoMesIndex() {
+  return Math.min(Math.max(mesActualIndex() + 1, 0), MESES.length - 1);
+}
+
 const CARGOS_INICIALES = {
   "visa-ariel": [
     { id: "c1", nombre: "Spotify", monto: 7500, cuotaTotal: null },
@@ -236,7 +245,7 @@ export default function FinanzasFamiliares() {
     descripcion: "",
     montoTotal: "",
     cantidadCuotas: "",
-    mesInicio: 1,
+    mesInicio: proximoMesIndex(),
   });
 
   const valorEnMes = valorCargoEnMes;
@@ -382,8 +391,8 @@ export default function FinanzasFamiliares() {
         // Enlaces a las apps móviles (Configuración)
         const { data: enlacesDb } = await supabase.from("enlaces_apps").select("*");
         const enlacesDefault = {
-          ariel: "https://finanzas-ariel.netlify.app",
-          cielo: "https://finanzas-cielo.netlify.app",
+          ariel: "https://app-ariel-movil-finanzas.vercel.app",
+          cielo: "https://app-cielo-movil-finanzas-mu.vercel.app",
         };
         const faltantesEnlace = [];
         for (const key of ["ariel", "cielo"]) {
@@ -394,6 +403,13 @@ export default function FinanzasFamiliares() {
           setEnlacesApps((prev) => {
             const nuevos = { ...prev };
             enlacesDb.forEach((e) => (nuevos[e.persona] = e.url));
+            return nuevos;
+          });
+          setPinesApps((prev) => {
+            const nuevos = { ...prev };
+            enlacesDb.forEach((e) => {
+              if (e.pin) nuevos[e.persona] = e.pin;
+            });
             return nuevos;
           });
         }
@@ -479,10 +495,12 @@ export default function FinanzasFamiliares() {
 
   // ---- Apps Móviles (Configuración) ----
   const [enlacesApps, setEnlacesApps] = useState({
-    ariel: "https://finanzas-ariel.netlify.app",
-    cielo: "https://finanzas-cielo.netlify.app",
+    ariel: "https://app-ariel-movil-finanzas.vercel.app",
+    cielo: "https://app-cielo-movil-finanzas-mu.vercel.app",
   });
   const [editandoEnlace, setEditandoEnlace] = useState(null); // "ariel" | "cielo" | null
+  const [pinesApps, setPinesApps] = useState({ ariel: "1234", cielo: "1234" });
+  const [editandoPinApp, setEditandoPinApp] = useState(null); // "ariel" | "cielo" | null
   const [copiado, setCopiado] = useState(null); // "ariel" | "cielo" | null — feedback temporal
 
   const actualizarEnlaceApp = (persona, valor) => {
@@ -494,6 +512,18 @@ export default function FinanzasFamiliares() {
     setEditandoEnlace(null);
     supabase.from("enlaces_apps").update({ url: enlacesApps[persona] }).eq("persona", persona).then(({ error }) => {
       if (error) console.error("Error guardando enlace de app:", error);
+    });
+  };
+
+  const actualizarPinApp = (persona, valor) => {
+    setPinesApps((prev) => ({ ...prev, [persona]: valor.replace(/\D/g, "").slice(0, 4) }));
+  };
+
+  const guardarPinApp = (persona) => {
+    setEditandoPinApp(null);
+    if (!/^\d{4}$/.test(pinesApps[persona])) return; // solo guarda si quedaron los 4 dígitos completos
+    supabase.from("enlaces_apps").update({ pin: pinesApps[persona] }).eq("persona", persona).then(({ error }) => {
+      if (error) console.error("Error guardando PIN de app:", error);
     });
   };
 
@@ -2425,6 +2455,32 @@ export default function FinanzasFamiliares() {
                             {enlacesApps[p.key]}
                           </a>
                         )}
+                        <div className="flex items-center gap-1.5 mt-1.5">
+                          <span className="text-[11px]" style={{ color: TOKENS.muted }}>PIN:</span>
+                          {editandoPinApp === p.key ? (
+                            <input
+                              autoFocus
+                              type="text"
+                              inputMode="numeric"
+                              maxLength={4}
+                              value={pinesApps[p.key]}
+                              onChange={(e) => actualizarPinApp(p.key, e.target.value)}
+                              onBlur={() => guardarPinApp(p.key)}
+                              onKeyDown={(e) => e.key === "Enter" && guardarPinApp(p.key)}
+                              className="text-xs rounded px-1.5 py-0.5 outline-none border w-16 tracking-widest"
+                              style={{ color: TOKENS.text, borderColor: TOKENS.gold, background: TOKENS.surface }}
+                            />
+                          ) : (
+                            <button
+                              onClick={() => setEditandoPinApp(p.key)}
+                              className="text-xs font-semibold tracking-widest hover:underline"
+                              style={{ color: TOKENS.text }}
+                              title="Tocar para cambiar el PIN"
+                            >
+                              {pinesApps[p.key]}
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
 
@@ -2467,7 +2523,7 @@ export default function FinanzasFamiliares() {
               </div>
               <button
                 onClick={() => {
-                  setFormCarga((prev) => ({ ...prev, mesInicio: mesIndex }));
+                  setFormCarga((prev) => ({ ...prev, mesInicio: proximoMesIndex() }));
                   setModalNuevaCarga(true);
                 }}
                 className="flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-medium text-white shrink-0 whitespace-nowrap"
@@ -2587,9 +2643,6 @@ export default function FinanzasFamiliares() {
                                       1/{c.cuotaTotal}
                                     </span>
                                   )}
-                                  <span className="text-[10px] px-1.5 py-0.5 rounded-full whitespace-nowrap" style={{ background: TOKENS.surfaceBorder, color: TOKENS.muted }}>
-                                    desde {MESES[c.mesInicio || 0]}
-                                  </span>
                                   <button
                                     onClick={() => eliminarCargo(t.id, c.id)}
                                     className="ml-0.5 opacity-40 hover:opacity-90 transition-opacity"
