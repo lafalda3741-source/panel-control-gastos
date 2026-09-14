@@ -5,16 +5,8 @@ import {
   ChevronLeft,
   ChevronRight,
   TrendingUp,
-  Filter,
-  ShoppingBag,
-  Utensils,
-  Car,
   Home,
-  Heart,
   Zap,
-  Film,
-  MoreHorizontal,
-  Search,
   Menu,
   X,
   LayoutDashboard,
@@ -45,7 +37,7 @@ import {
   ExternalLink,
   MessageCircle,
   HandCoins,
-  PieChart,
+  PieChart as PieChartIcon,
   Sliders,
   Sparkles,
 } from "lucide-react";
@@ -109,32 +101,6 @@ const TARJETAS = [
     gradiente: "from-[#581C87] via-[#6B21A8] to-[#3B0764]",
     vencimiento: "09/28",
   },
-];
-
-const CATEGORIAS = {
-  supermercado: { label: "Supermercado", icon: ShoppingBag, color: "#2DD4BF" },
-  comida: { label: "Restaurantes", icon: Utensils, color: "#FB923C" },
-  transporte: { label: "Transporte", icon: Car, color: "#60A5FA" },
-  hogar: { label: "Hogar", icon: Home, color: "#A78BFA" },
-  salud: { label: "Salud", icon: Heart, color: "#F472B6" },
-  servicios: { label: "Servicios", icon: Zap, color: "#FBBF24" },
-  ocio: { label: "Ocio", icon: Film, color: "#4ADE80" },
-  otros: { label: "Otros", icon: MoreHorizontal, color: "#94A3B8" },
-};
-
-const TRANSACCIONES = [
-  { id: 1, tarjeta: "visa-ariel", comercio: "Carrefour", categoria: "supermercado", monto: 38450, fecha: "28 ago", cuotas: null },
-  { id: 2, tarjeta: "visa-cielo", comercio: "Netflix", categoria: "ocio", monto: 4990, fecha: "27 ago", cuotas: null },
-  { id: 3, tarjeta: "cabal-ariel", comercio: "YPF", categoria: "transporte", monto: 22100, fecha: "26 ago", cuotas: null },
-  { id: 4, tarjeta: "visa-ariel", comercio: "Farmacity", categoria: "salud", monto: 15680, fecha: "25 ago", cuotas: null },
-  { id: 5, tarjeta: "cabal-cielo", comercio: "Easy Hogar", categoria: "hogar", monto: 67300, fecha: "24 ago", cuotas: "3/6" },
-  { id: 6, tarjeta: "visa-cielo", comercio: "La Cabrera", categoria: "comida", monto: 29800, fecha: "23 ago", cuotas: null },
-  { id: 7, tarjeta: "visa-ariel", comercio: "Edenor", categoria: "servicios", monto: 18200, fecha: "22 ago", cuotas: null },
-  { id: 8, tarjeta: "cabal-ariel", comercio: "Sodimac", categoria: "hogar", monto: 94500, fecha: "20 ago", cuotas: "2/12" },
-  { id: 9, tarjeta: "visa-ariel", comercio: "Coto", categoria: "supermercado", monto: 41200, fecha: "19 ago", cuotas: null },
-  { id: 10, tarjeta: "cabal-cielo", comercio: "Cinemark", categoria: "ocio", monto: 8900, fecha: "17 ago", cuotas: null },
-  { id: 11, tarjeta: "visa-cielo", comercio: "Farmacia del Sol", categoria: "salud", monto: 6300, fecha: "16 ago", cuotas: null },
-  { id: 12, tarjeta: "visa-ariel", comercio: "Uber", categoria: "transporte", monto: 5400, fecha: "15 ago", cuotas: null },
 ];
 
 // ---------- Sistema de diseño ----------
@@ -241,7 +207,7 @@ const SECCIONES = [
   { id: "dashboard", label: "Panel de Control", icon: LayoutDashboard },
   { id: "ingresos", label: "Ingresos", icon: HandCoins },
   { id: "tarjetas", label: "Cuotas de Tarjetas", icon: CreditCard },
-  { id: "gastos", label: "Gastos Mensuales", icon: PieChart },
+  { id: "gastos", label: "Gastos Mensuales", icon: PieChartIcon },
   { id: "calculos", label: "Cálculos Adicionales", icon: Calculator },
   { id: "inversion", label: "Inversión", icon: LineChart },
   { id: "configuracion", label: "Configuración", icon: Sliders },
@@ -255,10 +221,6 @@ export default function FinanzasFamiliares() {
 
   const [menuAbierto, setMenuAbierto] = useState(false);
   const [seccionActiva, setSeccionActiva] = useState("dashboard");
-  const [cardIndex, setCardIndex] = useState(0);
-  const [filtroTarjeta, setFiltroTarjeta] = useState("todas");
-  const [filtroCategoria, setFiltroCategoria] = useState("todas");
-  const [busqueda, setBusqueda] = useState("");
   const [mesIndex, setMesIndex] = useState(1); // arranca en "Sep 2026" (mes actual del sistema)
 
   // ---- Detalle de tarjetas ----
@@ -407,8 +369,69 @@ export default function FinanzasFamiliares() {
         // Otros ingresos
         const { data: ingresosExtraDb } = await supabase.from("ingresos_extra").select("*");
         setIngresosExtra((ingresosExtraDb || []).map((ig) => ({ id: ig.id, nombre: ig.nombre, monto: Number(ig.monto) })));
+
+        // PIN de acceso al Panel
+        const { data: pinDb } = await supabase.from("configuracion_panel").select("*").eq("clave", "pin").maybeSingle();
+        if (pinDb) {
+          setPin(pinDb.valor);
+        } else {
+          await supabase.from("configuracion_panel").insert({ clave: "pin", valor: "1234" });
+        }
+        setPinListo(true);
+
+        // Enlaces a las apps móviles (Configuración)
+        const { data: enlacesDb } = await supabase.from("enlaces_apps").select("*");
+        const enlacesDefault = {
+          ariel: "https://finanzas-ariel.netlify.app",
+          cielo: "https://finanzas-cielo.netlify.app",
+        };
+        const faltantesEnlace = [];
+        for (const key of ["ariel", "cielo"]) {
+          const fila = (enlacesDb || []).find((e) => e.persona === key);
+          if (!fila) faltantesEnlace.push(key);
+        }
+        if (enlacesDb && enlacesDb.length > 0) {
+          setEnlacesApps((prev) => {
+            const nuevos = { ...prev };
+            enlacesDb.forEach((e) => (nuevos[e.persona] = e.url));
+            return nuevos;
+          });
+        }
+        for (const key of faltantesEnlace) {
+          await supabase.from("enlaces_apps").insert({ persona: key, url: enlacesDefault[key] });
+        }
+
+        // Cálculos Adicionales
+        const { data: calculosDb } = await supabase.from("calculos_adicionales").select("*");
+        setCalculosAdicionales(
+          (calculosDb || []).map((c) => ({
+            id: c.id,
+            titulo: c.titulo,
+            montoInicial: Number(c.monto_inicial) || 0,
+            filas: c.filas || [],
+          }))
+        );
+
+        // Inversión
+        const { data: inversionesDb } = await supabase.from("inversiones").select("*");
+        if (inversionesDb && inversionesDb.length > 0) {
+          setInversiones(
+            inversionesDb.map((inv) => ({ id: inv.id, nombre: inv.nombre, moneda: inv.moneda, monto: Number(inv.monto), icono: inv.icono }))
+          );
+        } else {
+          const inversionesIniciales = [
+            { id: "inv1", nombre: "Dólares en fondos comunes", moneda: "USD", monto: 2500, icono: "fondo" },
+            { id: "inv2", nombre: "Pesos en fondo común", moneda: "ARS", monto: 850000, icono: "fondo" },
+            { id: "inv3", nombre: "Dólares en custodia", moneda: "USD", monto: 4000, icono: "custodia" },
+            { id: "inv4", nombre: "Plazo fijo", moneda: "ARS", monto: 600000, icono: "plazo" },
+            { id: "inv5", nombre: "Acciones / CEDEARs", moneda: "USD", monto: 1200, icono: "acciones" },
+          ];
+          setInversiones(inversionesIniciales);
+          await supabase.from("inversiones").insert(inversionesIniciales);
+        }
       } catch (err) {
         console.error("Error cargando datos de Supabase, se sigue con los datos locales:", err);
+        setPinListo(true); // evita dejar el teclado del PIN bloqueado para siempre si falló la carga
       } finally {
         setCargandoDatos(false);
       }
@@ -464,6 +487,14 @@ export default function FinanzasFamiliares() {
 
   const actualizarEnlaceApp = (persona, valor) => {
     setEnlacesApps((prev) => ({ ...prev, [persona]: valor }));
+  };
+
+  // Se llama al salir del campo de edición (onBlur): recién ahí se guarda en Supabase.
+  const guardarEnlaceApp = (persona) => {
+    setEditandoEnlace(null);
+    supabase.from("enlaces_apps").update({ url: enlacesApps[persona] }).eq("persona", persona).then(({ error }) => {
+      if (error) console.error("Error guardando enlace de app:", error);
+    });
   };
 
   const copiarEnlaceApp = async (persona) => {
@@ -650,109 +681,121 @@ export default function FinanzasFamiliares() {
     setModalNuevoIngreso(false);
   };
 
-  // ---- Cálculos Adicionales (persistido en localStorage) ----
+  // ---- Cálculos Adicionales (compartido en Supabase: tabla calculos_adicionales) ----
   // Cada cuadro: { id, titulo, montoInicial, filas: [{ id, descripcion, importe }] }
-  const LS_KEY_CALCULOS = "finanzas_familiares_calculos_adicionales_v1";
-
-  const [calculosAdicionales, setCalculosAdicionales] = useState(() => {
-    try {
-      if (typeof window === "undefined") return [];
-      const guardado = window.localStorage.getItem(LS_KEY_CALCULOS);
-      return guardado ? JSON.parse(guardado) : [];
-    } catch {
-      return [];
-    }
-  });
-
-  useEffect(() => {
-    try {
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem(LS_KEY_CALCULOS, JSON.stringify(calculosAdicionales));
-      }
-    } catch {
-      // si falla (por ejemplo, localStorage deshabilitado), seguimos igual en memoria
-    }
-  }, [calculosAdicionales]);
+  const [calculosAdicionales, setCalculosAdicionales] = useState([]);
 
   const agregarCuadroCalculo = () => {
-    setCalculosAdicionales((prev) => [
-      ...prev,
-      { id: `calc${Date.now()}`, titulo: "Nuevo cálculo", montoInicial: 0, filas: [] },
-    ]);
+    const nuevo = { id: `calc${Date.now()}`, titulo: "Nuevo cálculo", montoInicial: 0, filas: [] };
+    setCalculosAdicionales((prev) => [...prev, nuevo]);
+    supabase
+      .from("calculos_adicionales")
+      .insert({ id: nuevo.id, titulo: nuevo.titulo, monto_inicial: nuevo.montoInicial, filas: nuevo.filas })
+      .then(({ error }) => {
+        if (error) console.error("Error guardando cálculo:", error);
+      });
   };
 
   const eliminarCuadroCalculo = (cuadroId) => {
     setCalculosAdicionales((prev) => prev.filter((c) => c.id !== cuadroId));
+    supabase.from("calculos_adicionales").delete().eq("id", cuadroId).then(({ error }) => {
+      if (error) console.error("Error eliminando cálculo:", error);
+    });
   };
 
   const actualizarCuadroCalculo = (cuadroId, campo, valor) => {
     setCalculosAdicionales((prev) => prev.map((c) => (c.id === cuadroId ? { ...c, [campo]: valor } : c)));
+    const campoDb = campo === "montoInicial" ? "monto_inicial" : campo; // titulo | montoInicial
+    supabase.from("calculos_adicionales").update({ [campoDb]: valor }).eq("id", cuadroId).then(({ error }) => {
+      if (error) console.error("Error actualizando cálculo:", error);
+    });
   };
 
   const agregarFilaCalculo = (cuadroId) => {
     setCalculosAdicionales((prev) =>
-      prev.map((c) =>
-        c.id === cuadroId
-          ? { ...c, filas: [...c.filas, { id: `fila${Date.now()}`, descripcion: "", importe: 0 }] }
-          : c
-      )
+      prev.map((c) => {
+        if (c.id !== cuadroId) return c;
+        const filas = [...c.filas, { id: `fila${Date.now()}`, descripcion: "", importe: 0 }];
+        supabase.from("calculos_adicionales").update({ filas }).eq("id", cuadroId).then(({ error }) => {
+          if (error) console.error("Error guardando fila de cálculo:", error);
+        });
+        return { ...c, filas };
+      })
     );
   };
 
   const actualizarFilaCalculo = (cuadroId, filaId, campo, valor) => {
     setCalculosAdicionales((prev) =>
-      prev.map((c) =>
-        c.id === cuadroId
-          ? { ...c, filas: c.filas.map((f) => (f.id === filaId ? { ...f, [campo]: valor } : f)) }
-          : c
-      )
+      prev.map((c) => {
+        if (c.id !== cuadroId) return c;
+        const filas = c.filas.map((f) => (f.id === filaId ? { ...f, [campo]: valor } : f));
+        supabase.from("calculos_adicionales").update({ filas }).eq("id", cuadroId).then(({ error }) => {
+          if (error) console.error("Error actualizando fila de cálculo:", error);
+        });
+        return { ...c, filas };
+      })
     );
   };
 
   const eliminarFilaCalculo = (cuadroId, filaId) => {
     setCalculosAdicionales((prev) =>
-      prev.map((c) => (c.id === cuadroId ? { ...c, filas: c.filas.filter((f) => f.id !== filaId) } : c))
+      prev.map((c) => {
+        if (c.id !== cuadroId) return c;
+        const filas = c.filas.filter((f) => f.id !== filaId);
+        supabase.from("calculos_adicionales").update({ filas }).eq("id", cuadroId).then(({ error }) => {
+          if (error) console.error("Error eliminando fila de cálculo:", error);
+        });
+        return { ...c, filas };
+      })
     );
   };
 
-  // ---- Inversión ----
-  const [inversiones, setInversiones] = useState([
-    { id: "inv1", nombre: "Dólares en fondos comunes", moneda: "USD", monto: 2500, icono: "fondo" },
-    { id: "inv2", nombre: "Pesos en fondo común", moneda: "ARS", monto: 850000, icono: "fondo" },
-    { id: "inv3", nombre: "Dólares en custodia", moneda: "USD", monto: 4000, icono: "custodia" },
-    { id: "inv4", nombre: "Plazo fijo", moneda: "ARS", monto: 600000, icono: "plazo" },
-    { id: "inv5", nombre: "Acciones / CEDEARs", moneda: "USD", monto: 1200, icono: "acciones" },
-  ]);
+  // ---- Inversión (compartido en Supabase: tabla inversiones) ----
+  const [inversiones, setInversiones] = useState([]);
   const [editandoInversion, setEditandoInversion] = useState(null); // "id:campo"
   const [modalNuevaInversion, setModalNuevaInversion] = useState(false);
   const [formInversion, setFormInversion] = useState({ nombre: "", moneda: "USD", monto: "" });
 
   const actualizarCampoInversion = (id, campo, valor) => {
     setInversiones((prev) => prev.map((inv) => (inv.id === id ? { ...inv, [campo]: valor } : inv)));
+    supabase.from("inversiones").update({ [campo]: valor }).eq("id", id).then(({ error }) => {
+      if (error) console.error("Error actualizando inversión:", error);
+    });
   };
 
   const cambiarMonedaInversion = (id) => {
     setInversiones((prev) =>
-      prev.map((inv) => (inv.id === id ? { ...inv, moneda: inv.moneda === "USD" ? "ARS" : "USD" } : inv))
+      prev.map((inv) => {
+        if (inv.id !== id) return inv;
+        const nuevaMoneda = inv.moneda === "USD" ? "ARS" : "USD";
+        supabase.from("inversiones").update({ moneda: nuevaMoneda }).eq("id", id).then(({ error }) => {
+          if (error) console.error("Error actualizando moneda de inversión:", error);
+        });
+        return { ...inv, moneda: nuevaMoneda };
+      })
     );
   };
 
   const eliminarInversion = (id) => {
     setInversiones((prev) => prev.filter((inv) => inv.id !== id));
+    supabase.from("inversiones").delete().eq("id", id).then(({ error }) => {
+      if (error) console.error("Error eliminando inversión:", error);
+    });
   };
 
   const agregarInversion = () => {
     if (!formInversion.nombre.trim() || !formInversion.monto) return;
-    setInversiones((prev) => [
-      ...prev,
-      {
-        id: `inv${Date.now()}`,
-        nombre: formInversion.nombre.trim(),
-        moneda: formInversion.moneda,
-        monto: Number(formInversion.monto),
-        icono: "otro",
-      },
-    ]);
+    const nueva = {
+      id: `inv${Date.now()}`,
+      nombre: formInversion.nombre.trim(),
+      moneda: formInversion.moneda,
+      monto: Number(formInversion.monto),
+      icono: "otro",
+    };
+    setInversiones((prev) => [...prev, nueva]);
+    supabase.from("inversiones").insert(nueva).then(({ error }) => {
+      if (error) console.error("Error guardando inversión:", error);
+    });
     setFormInversion({ nombre: "", moneda: "USD", monto: "" });
     setModalNuevaInversion(false);
   };
@@ -862,56 +905,24 @@ export default function FinanzasFamiliares() {
     setModalNuevaCarga(false);
   };
 
-  const totalDeuda = TARJETAS.reduce((acc, t) => acc + t.saldo, 0);
-  const totalLimite = TARJETAS.reduce((acc, t) => acc + t.limite, 0);
-  const usoGlobal = Math.round((totalDeuda / totalLimite) * 100);
-
-  const datosCategorias = useMemo(() => {
-    const acc = {};
-    TRANSACCIONES.forEach((t) => {
-      acc[t.categoria] = (acc[t.categoria] || 0) + t.monto;
-    });
-    return Object.entries(acc)
-      .map(([key, value]) => ({
-        key,
-        name: CATEGORIAS[key].label,
-        value,
-        color: CATEGORIAS[key].color,
-      }))
-      .sort((a, b) => b.value - a.value);
-  }, []);
-
-  const totalGastado = datosCategorias.reduce((acc, c) => acc + c.value, 0);
-
-  const transaccionesFiltradas = useMemo(() => {
-    return TRANSACCIONES.filter((t) => {
-      if (filtroTarjeta !== "todas" && t.tarjeta !== filtroTarjeta) return false;
-      if (filtroCategoria !== "todas" && t.categoria !== filtroCategoria) return false;
-      if (busqueda && !t.comercio.toLowerCase().includes(busqueda.toLowerCase())) return false;
-      return true;
-    });
-  }, [filtroTarjeta, filtroCategoria, busqueda]);
-
-  const tarjetaActiva = TARJETAS[cardIndex];
-
   // ---- Cálculos para el Dashboard ----
   const gastosTarjetasEnMes = (i) =>
     TARJETAS.reduce((acc, t) => acc + totalTarjetaEnMes(cargosPorTarjeta[t.id], i), 0);
   const gastosFijosMensuales = gastosMensuales.filter((g) => !g.esTarjeta).reduce((acc, g) => acc + g.monto, 0);
-  // Suma del campo "saldo" de la tabla tarjetas — se mantiene solo con tu trigger de Postgres
-  // cada vez que se inserta un cargo, así que este es el total real y actualizado de las 4 tarjetas.
-  const sumaSaldosTarjetas = Object.values(saldosTarjetas).reduce((acc, s) => acc + (Number(s) || 0), 0);
 
   const ingresoArielMes = sueldos.ariel.montosPorMes[mesIndex];
   const ingresoCieloMes = sueldos.cielo.montosPorMes[mesIndex];
   const totalIngresosExtra = ingresosExtra.reduce((acc, ig) => acc + ig.monto, 0);
   const ingresosTotalesMes = ingresoArielMes + ingresoCieloMes + totalIngresosExtra;
-  const gastosTarjetasMes = sumaSaldosTarjetas;
+  // Se calcula igual que la dona/comparativa y que la app móvil: en base a los
+  // cargos de cada tarjeta EN EL MES SELECCIONADO (mesIndex), no en el saldo
+  // "de hoy" que guarda Supabase — así el KPI respeta el mes que estés mirando.
+  const gastosTarjetasMes = gastosTarjetasEnMes(mesIndex);
   const gastosTotalesMes = gastosTarjetasMes + gastosFijosMensuales;
   const ahorroProyectado = ingresosTotalesMes - gastosTotalesMes;
   const pagadoMes = gastosMensuales
     .filter((g) => g.pagado)
-    .reduce((acc, g) => acc + (g.esTarjeta ? (saldosTarjetas[g.tarjetaId] ?? g.monto) : g.monto), 0);
+    .reduce((acc, g) => acc + (g.esTarjeta ? totalTarjetaEnMes(cargosPorTarjeta[g.tarjetaId], mesIndex) || 0 : g.monto), 0);
   const pendienteMes = gastosTotalesMes - pagadoMes;
   const ahorroReal = ingresosTotalesMes - pagadoMes;
   const aporteAriel = ingresosTotalesMes > 0 ? gastosTotalesMes * (ingresoArielMes / ingresosTotalesMes) : 0;
@@ -939,11 +950,13 @@ export default function FinanzasFamiliares() {
 
   // ---- Seguridad: PIN de 4 dígitos ----
   const [pin, setPin] = useState("1234");
+  const [pinListo, setPinListo] = useState(false); // true recién cuando ya se leyó el pin real de Supabase
   const [desbloqueado, setDesbloqueado] = useState(false);
   const [pinIngresado, setPinIngresado] = useState("");
   const [pinError, setPinError] = useState(false);
 
   const ingresarDigitoPin = (d) => {
+    if (!pinListo) return; // evita comparar contra el "1234" por defecto mientras carga el real
     if (pinError) setPinError(false);
     setPinIngresado((prev) => {
       if (prev.length >= 4) return prev;
@@ -985,6 +998,9 @@ export default function FinanzasFamiliares() {
       return;
     }
     setPin(formPin.nuevo);
+    supabase.from("configuracion_panel").update({ valor: formPin.nuevo }).eq("clave", "pin").then(({ error }) => {
+      if (error) console.error("Error guardando PIN:", error);
+    });
     setFormPin({ actual: "", nuevo: "", confirmar: "" });
     setMensajePin({ tipo: "ok", texto: "PIN actualizado correctamente." });
   };
@@ -2388,8 +2404,8 @@ export default function FinanzasFamiliares() {
                             type="text"
                             value={enlacesApps[p.key]}
                             onChange={(e) => actualizarEnlaceApp(p.key, e.target.value)}
-                            onBlur={() => setEditandoEnlace(null)}
-                            onKeyDown={(e) => e.key === "Enter" && setEditandoEnlace(null)}
+                            onBlur={() => guardarEnlaceApp(p.key)}
+                            onKeyDown={(e) => e.key === "Enter" && guardarEnlaceApp(p.key)}
                             className="text-xs rounded px-1.5 py-0.5 outline-none border w-full mt-0.5"
                             style={{ color: TOKENS.text, borderColor: TOKENS.gold, background: TOKENS.surface }}
                           />
