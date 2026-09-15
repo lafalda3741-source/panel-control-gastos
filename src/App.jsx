@@ -2620,6 +2620,7 @@ export default function FinanzasFamiliares() {
                                       type="text"
                                       value={c.nombre}
                                       onChange={(e) => actualizarCampoCargo(t.id, c.id, "nombre", e.target.value)}
+                                      onMouseDown={(e) => e.stopPropagation()}
                                       onBlur={() => setEditando(null)}
                                       onKeyDown={(e) => e.key === "Enter" && setEditando(null)}
                                       className="font-medium rounded px-1.5 py-0.5 text-[13px] md:text-base outline-none border w-24 md:w-36"
@@ -2629,6 +2630,7 @@ export default function FinanzasFamiliares() {
                                     <span
                                       className="font-medium cursor-text rounded px-1 -mx-1 hover:bg-black/5 transition-colors"
                                       style={{ color: TOKENS.text }}
+                                      onMouseDown={(e) => e.preventDefault()}
                                       onDoubleClick={() => setEditando(`${t.id}:${c.id}:nombre`)}
                                       title="Doble clic para editar"
                                     >
@@ -2665,6 +2667,7 @@ export default function FinanzasFamiliares() {
                                         autoFocus
                                         type="number"
                                         defaultValue={c.monto}
+                                        onMouseDown={(e) => e.stopPropagation()}
                                         onBlur={(e) => {
                                           const n = Number(e.target.value);
                                           if (!isNaN(n) && n >= 0) actualizarCampoCargo(t.id, c.id, "monto", n);
@@ -2681,6 +2684,7 @@ export default function FinanzasFamiliares() {
                                       <span
                                         className={esEditable ? "cursor-text rounded px-1 -mx-1 hover:bg-black/5 transition-colors" : ""}
                                         style={{ color: i === mesIndex ? TOKENS.gold : TOKENS.text }}
+                                        onMouseDown={(e) => esEditable && e.preventDefault()}
                                         onDoubleClick={() => esEditable && setEditando(claveEdicion)}
                                         title={esEditable ? "Doble clic para editar" : undefined}
                                       >
