@@ -239,6 +239,7 @@ export default function FinanzasFamiliares() {
   const [arrastrando, setArrastrando] = useState(null); // { tarjetaId, cargoId }
   const [editando, setEditando] = useState(null); // "tarjetaId:cargoId:campo"
   const [modalNuevaCarga, setModalNuevaCarga] = useState(false);
+  const [cargoEnEdicion, setCargoEnEdicion] = useState(null); // { tarjetaId, cargoId } | null (null = alta nueva)
   const [formCarga, setFormCarga] = useState({
     tarjetaId: TARJETAS[0].id,
     tipo: "cuotas", // "cuotas" | "recurrente"
@@ -899,39 +900,83 @@ export default function FinanzasFamiliares() {
       ? Number(formCarga.montoTotal) / Number(formCarga.cantidadCuotas)
       : null;
 
-  const agregarCarga = () => {
+  const abrirEdicionCargo = (tarjetaId, cargo) => {
+    const esCuotas = cargo.cuotaTotal != null;
+    setCargoEnEdicion({ tarjetaId, cargoId: cargo.id });
+    setFormCarga({
+      tarjetaId,
+      tipo: esCuotas ? "cuotas" : "recurrente",
+      descripcion: cargo.nombre,
+      montoTotal: String(esCuotas ? cargo.monto * cargo.cuotaTotal : cargo.monto),
+      cantidadCuotas: esCuotas ? String(cargo.cuotaTotal) : "",
+      mesInicio: cargo.mesInicio || 0,
+    });
+    setModalNuevaCarga(true);
+  };
+
+  const cerrarModalCarga = () => {
+    setModalNuevaCarga(false);
+    setCargoEnEdicion(null);
+  };
+
+  const guardarCarga = () => {
     if (!formCarga.descripcion.trim() || !formCarga.montoTotal) return;
     const esCuotas = formCarga.tipo === "cuotas";
     const cuotas = esCuotas ? Number(formCarga.cantidadCuotas) || 1 : null;
     const montoPorMes = esCuotas ? Number(formCarga.montoTotal) / cuotas : Number(formCarga.montoTotal);
     const mesInicio = Number(formCarga.mesInicio) || 0;
 
-    const nuevo = {
-      id: `c${Date.now()}`,
-      nombre: formCarga.descripcion.trim(),
-      monto: montoPorMes,
-      cuotaTotal: cuotas,
-      mesInicio,
-    };
-    setCargosPorTarjeta((prev) => ({
-      ...prev,
-      [formCarga.tarjetaId]: [...(prev[formCarga.tarjetaId] || []), nuevo],
-    }));
-    supabase
-      .from("cargos_tarjeta")
-      .insert({
-        id: nuevo.id,
-        tarjeta_id: formCarga.tarjetaId,
-        nombre: nuevo.nombre,
-        monto: nuevo.monto,
-        cuota_total: nuevo.cuotaTotal,
-        mes_inicio: mesInicio,
-        orden: (cargosPorTarjeta[formCarga.tarjetaId] || []).length,
-      })
-      .then(({ error }) => {
-        if (error) console.error("Error guardando cargo:", error);
+    if (cargoEnEdicion) {
+      // ---- Editar un cargo ya cargado (nombre, monto, tipo, cuotas, mes de inicio y/o tarjeta) ----
+      const { tarjetaId: tarjetaOriginal, cargoId } = cargoEnEdicion;
+      const tarjetaDestino = formCarga.tarjetaId;
+      const actualizado = { id: cargoId, nombre: formCarga.descripcion.trim(), monto: montoPorMes, cuotaTotal: cuotas, mesInicio };
+
+      setCargosPorTarjeta((prev) => {
+        const siguiente = { ...prev };
+        siguiente[tarjetaOriginal] = (siguiente[tarjetaOriginal] || []).filter((c) => c.id !== cargoId);
+        siguiente[tarjetaDestino] = [...(siguiente[tarjetaDestino] || []), actualizado];
+        return siguiente;
       });
-    setFormCarga({ tarjetaId: formCarga.tarjetaId, tipo: "cuotas", descripcion: "", montoTotal: "", cantidadCuotas: "", mesInicio });
+
+      supabase
+        .from("cargos_tarjeta")
+        .update({
+          tarjeta_id: tarjetaDestino,
+          nombre: actualizado.nombre,
+          monto: actualizado.monto,
+          cuota_total: actualizado.cuotaTotal,
+          mes_inicio: mesInicio,
+        })
+        .eq("id", cargoId)
+        .then(({ error }) => {
+          if (error) console.error("Error editando cargo:", error);
+        });
+    } else {
+      // ---- Cargo nuevo ----
+      const nuevo = { id: `c${Date.now()}`, nombre: formCarga.descripcion.trim(), monto: montoPorMes, cuotaTotal: cuotas, mesInicio };
+      setCargosPorTarjeta((prev) => ({
+        ...prev,
+        [formCarga.tarjetaId]: [...(prev[formCarga.tarjetaId] || []), nuevo],
+      }));
+      supabase
+        .from("cargos_tarjeta")
+        .insert({
+          id: nuevo.id,
+          tarjeta_id: formCarga.tarjetaId,
+          nombre: nuevo.nombre,
+          monto: nuevo.monto,
+          cuota_total: nuevo.cuotaTotal,
+          mes_inicio: mesInicio,
+          orden: (cargosPorTarjeta[formCarga.tarjetaId] || []).length,
+        })
+        .then(({ error }) => {
+          if (error) console.error("Error guardando cargo:", error);
+        });
+    }
+
+    setCargoEnEdicion(null);
+    setFormCarga({ tarjetaId: formCarga.tarjetaId, tipo: "cuotas", descripcion: "", montoTotal: "", cantidadCuotas: "", mesInicio: proximoMesIndex() });
     setModalNuevaCarga(false);
   };
 
@@ -2523,7 +2568,15 @@ export default function FinanzasFamiliares() {
               </div>
               <button
                 onClick={() => {
-                  setFormCarga((prev) => ({ ...prev, mesInicio: proximoMesIndex() }));
+                  setCargoEnEdicion(null);
+                  setFormCarga({
+                    tarjetaId: TARJETAS[0].id,
+                    tipo: "cuotas",
+                    descripcion: "",
+                    montoTotal: "",
+                    cantidadCuotas: "",
+                    mesInicio: proximoMesIndex(),
+                  });
                   setModalNuevaCarga(true);
                 }}
                 className="flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-medium text-white shrink-0 whitespace-nowrap"
@@ -2644,6 +2697,13 @@ export default function FinanzasFamiliares() {
                                     </span>
                                   )}
                                   <button
+                                    onClick={() => abrirEdicionCargo(t.id, c)}
+                                    className="ml-0.5 opacity-40 hover:opacity-90 transition-opacity"
+                                    aria-label={`Editar ${c.nombre}`}
+                                  >
+                                    <Pencil size={12} style={{ color: TOKENS.muted }} />
+                                  </button>
+                                  <button
                                     onClick={() => eliminarCargo(t.id, c.id)}
                                     className="ml-0.5 opacity-40 hover:opacity-90 transition-opacity"
                                     aria-label={`Eliminar ${c.nombre}`}
@@ -2730,7 +2790,7 @@ export default function FinanzasFamiliares() {
           <div
             className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
             style={{ background: "rgba(16,23,40,0.35)" }}
-            onClick={() => setModalNuevaCarga(false)}
+            onClick={cerrarModalCarga}
           >
             <div
               className="w-full max-w-sm rounded-t-3xl sm:rounded-3xl p-5 border max-h-[90vh] overflow-y-auto"
@@ -2741,14 +2801,14 @@ export default function FinanzasFamiliares() {
               <div className="flex items-start justify-between mb-5">
                 <div>
                   <p className="text-[10px] font-semibold tracking-wide" style={{ color: TOKENS.gold }}>
-                    NUEVA OPERACIÓN
+                    {cargoEnEdicion ? "EDITAR OPERACIÓN" : "NUEVA OPERACIÓN"}
                   </p>
                   <h3 className="ff-display text-lg font-semibold mt-0.5" style={{ color: TOKENS.text }}>
-                    Carga rápida
+                    {cargoEnEdicion ? "Editar cargo" : "Carga rápida"}
                   </h3>
                 </div>
                 <button
-                  onClick={() => setModalNuevaCarga(false)}
+                  onClick={cerrarModalCarga}
                   className="h-7 w-7 rounded-full flex items-center justify-center hover:bg-black/5 transition-colors"
                   aria-label="Cerrar"
                 >
@@ -2865,11 +2925,11 @@ export default function FinanzasFamiliares() {
               )}
 
               <button
-                onClick={agregarCarga}
+                onClick={guardarCarga}
                 className="w-full rounded-full py-3 text-sm font-medium text-white mt-1"
                 style={{ background: TOKENS.gold }}
               >
-                ✓ Guardar
+                {cargoEnEdicion ? "✓ Guardar cambios" : "✓ Guardar"}
               </button>
             </div>
           </div>
