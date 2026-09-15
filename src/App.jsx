@@ -237,6 +237,7 @@ export default function FinanzasFamiliares() {
   const [saldosTarjetas, setSaldosTarjetas] = useState({}); // { [tarjetaId]: saldo } — viene de la tabla "tarjetas", mantenida por tu trigger
   const [cargandoDatos, setCargandoDatos] = useState(true);
   const [arrastrando, setArrastrando] = useState(null); // { tarjetaId, cargoId }
+  const [cargoArrastrable, setCargoArrastrable] = useState(null); // id del cargo habilitado para arrastrar ahora mismo (solo mientras se sostiene el grip)
   const [editando, setEditando] = useState(null); // "tarjetaId:cargoId:campo"
   const [modalNuevaCarga, setModalNuevaCarga] = useState(false);
   const [formCarga, setFormCarga] = useState({
@@ -2596,14 +2597,16 @@ export default function FinanzasFamiliares() {
                           {cargos.map((c) => (
                             <tr
                               key={c.id}
-                              draggable
+                              draggable={cargoArrastrable === c.id}
                               onDragStart={() => setArrastrando({ tarjetaId: t.id, cargoId: c.id })}
+                              onDragEnd={() => setCargoArrastrable(null)}
                               onDragOver={(e) => e.preventDefault()}
                               onDrop={() => {
                                 if (arrastrando && arrastrando.tarjetaId === t.id) {
                                   moverCargo(t.id, arrastrando.cargoId, c.id);
                                 }
                                 setArrastrando(null);
+                                setCargoArrastrable(null);
                               }}
                               className="border-t"
                               style={{ borderColor: TOKENS.surfaceBorder }}
@@ -2612,8 +2615,13 @@ export default function FinanzasFamiliares() {
                                 className="sticky left-0 px-4 py-2.5 whitespace-nowrap z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]"
                                 style={{ background: TOKENS.surface }}
                               >
-                                <div className="flex items-center gap-1.5 cursor-grab active:cursor-grabbing">
-                                  <GripVertical size={13} style={{ color: TOKENS.muted, opacity: 0.5 }} />
+                                <div className="flex items-center gap-1.5">
+                                  <span
+                                    onMouseDown={() => setCargoArrastrable(c.id)}
+                                    className="cursor-grab active:cursor-grabbing"
+                                  >
+                                    <GripVertical size={13} style={{ color: TOKENS.muted, opacity: 0.5 }} />
+                                  </span>
                                   {editando === `${t.id}:${c.id}:nombre` ? (
                                     <input
                                       autoFocus
