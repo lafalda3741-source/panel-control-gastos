@@ -2639,11 +2639,11 @@ export default function FinanzasFamiliares() {
                                       className="font-medium cursor-text rounded px-1 -mx-1 hover:bg-black/5 transition-colors"
                                       style={{ color: TOKENS.text }}
                                       onMouseDown={(e) => e.preventDefault()}
-                                      onDoubleClick={(e) => {
+                                      onClick={(e) => {
                                         e.preventDefault();
                                         setEditando(`${t.id}:${c.id}:nombre`);
                                       }}
-                                      title="Doble clic para editar"
+                                      title="Tocar para editar"
                                     >
                                       {c.nombre}
                                     </span>
@@ -2696,12 +2696,12 @@ export default function FinanzasFamiliares() {
                                         className={esEditable ? "cursor-text rounded px-1 -mx-1 hover:bg-black/5 transition-colors" : ""}
                                         style={{ color: i === mesIndex ? TOKENS.gold : TOKENS.text }}
                                         onMouseDown={(e) => esEditable && e.preventDefault()}
-                                        onDoubleClick={(e) => {
+                                        onClick={(e) => {
                                           if (!esEditable) return;
                                           e.preventDefault();
                                           setEditando(claveEdicion);
                                         }}
-                                        title={esEditable ? "Doble clic para editar" : undefined}
+                                        title={esEditable ? "Tocar para editar" : undefined}
                                       >
                                         {fmt(valor)}
                                       </span>
