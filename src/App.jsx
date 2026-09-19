@@ -2638,7 +2638,6 @@ export default function FinanzasFamiliares() {
                                     <span
                                       className="font-medium cursor-text rounded px-1 -mx-1 hover:bg-black/5 transition-colors"
                                       style={{ color: TOKENS.text }}
-                                      onMouseDown={(e) => e.preventDefault()}
                                       onClick={(e) => {
                                         e.preventDefault();
                                         setEditando(`${t.id}:${c.id}:nombre`);
@@ -2695,7 +2694,6 @@ export default function FinanzasFamiliares() {
                                       <span
                                         className={esEditable ? "cursor-text rounded px-1 -mx-1 hover:bg-black/5 transition-colors" : ""}
                                         style={{ color: i === mesIndex ? TOKENS.gold : TOKENS.text }}
-                                        onMouseDown={(e) => esEditable && e.preventDefault()}
                                         onClick={(e) => {
                                           if (!esEditable) return;
                                           e.preventDefault();
