@@ -2666,7 +2666,7 @@ export default function FinanzasFamiliares() {
                               </td>
                               {MESES.map((m, i) => {
                                 const valor = valorEnMes(c, i);
-                                const claveEdicion = `${t.id}:${c.id}:monto`;
+                                const claveEdicion = `${t.id}:${c.id}:monto:${i}`;
                                 const esEditable = valor != null;
                                 return (
                                   <td key={m} className="text-right px-3 py-2.5 tabular whitespace-nowrap">
