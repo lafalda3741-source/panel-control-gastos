@@ -4,6 +4,7 @@ import {
   CreditCard,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   TrendingUp,
   Home,
   Zap,
@@ -433,15 +434,22 @@ export default function FinanzasFamiliares() {
         const { data: inversionesDb } = await supabase.from("inversiones").select("*");
         if (inversionesDb && inversionesDb.length > 0) {
           setInversiones(
-            inversionesDb.map((inv) => ({ id: inv.id, nombre: inv.nombre, moneda: inv.moneda, monto: Number(inv.monto), icono: inv.icono }))
+            inversionesDb.map((inv) => ({
+              id: inv.id,
+              nombre: inv.nombre,
+              moneda: inv.moneda,
+              monto: Number(inv.monto),
+              icono: inv.icono,
+              historial: inv.historial || [],
+            }))
           );
         } else {
           const inversionesIniciales = [
-            { id: "inv1", nombre: "Dólares en fondos comunes", moneda: "USD", monto: 2500, icono: "fondo" },
-            { id: "inv2", nombre: "Pesos en fondo común", moneda: "ARS", monto: 850000, icono: "fondo" },
-            { id: "inv3", nombre: "Dólares en custodia", moneda: "USD", monto: 4000, icono: "custodia" },
-            { id: "inv4", nombre: "Plazo fijo", moneda: "ARS", monto: 600000, icono: "plazo" },
-            { id: "inv5", nombre: "Acciones / CEDEARs", moneda: "USD", monto: 1200, icono: "acciones" },
+            { id: "inv1", nombre: "Dólares en fondos comunes", moneda: "USD", monto: 2500, icono: "fondo", historial: [] },
+            { id: "inv2", nombre: "Pesos en fondo común", moneda: "ARS", monto: 850000, icono: "fondo", historial: [] },
+            { id: "inv3", nombre: "Dólares en custodia", moneda: "USD", monto: 4000, icono: "custodia", historial: [] },
+            { id: "inv4", nombre: "Plazo fijo", moneda: "ARS", monto: 600000, icono: "plazo", historial: [] },
+            { id: "inv5", nombre: "Acciones / CEDEARs", moneda: "USD", monto: 1200, icono: "acciones", historial: [] },
           ];
           setInversiones(inversionesIniciales);
           await supabase.from("inversiones").insert(inversionesIniciales);
@@ -786,6 +794,54 @@ export default function FinanzasFamiliares() {
   const [editandoInversion, setEditandoInversion] = useState(null); // "id:campo"
   const [modalNuevaInversion, setModalNuevaInversion] = useState(false);
   const [formInversion, setFormInversion] = useState({ nombre: "", moneda: "USD", monto: "" });
+  const [historialAbierto, setHistorialAbierto] = useState(null); // id de la inversión con el desplegable abierto, o null
+  const [formHistorial, setFormHistorial] = useState({ fecha: "", valor: "" });
+
+  const hoyISO = () => new Date().toISOString().slice(0, 10);
+
+  const agregarCargaHistorial = (invId) => {
+    if (!formHistorial.fecha || !formHistorial.valor) return;
+    const nuevaEntrada = { id: `h${Date.now()}`, fecha: formHistorial.fecha, valor: Number(formHistorial.valor) };
+
+    setInversiones((prev) =>
+      prev.map((inv) => {
+        if (inv.id !== invId) return inv;
+        const historial = [...inv.historial, nuevaEntrada].sort((a, b) => a.fecha.localeCompare(b.fecha));
+        const ultimoValor = historial[historial.length - 1].valor;
+
+        supabase
+          .from("inversiones")
+          .update({ historial, monto: ultimoValor })
+          .eq("id", invId)
+          .then(({ error }) => {
+            if (error) console.error("Error guardando carga del fondo:", error);
+          });
+
+        return { ...inv, historial, monto: ultimoValor };
+      })
+    );
+    setFormHistorial({ fecha: "", valor: "" });
+  };
+
+  const eliminarCargaHistorial = (invId, entradaId) => {
+    setInversiones((prev) =>
+      prev.map((inv) => {
+        if (inv.id !== invId) return inv;
+        const historial = inv.historial.filter((h) => h.id !== entradaId);
+        const nuevoMonto = historial.length > 0 ? historial[historial.length - 1].valor : inv.monto;
+
+        supabase
+          .from("inversiones")
+          .update({ historial, monto: nuevoMonto })
+          .eq("id", invId)
+          .then(({ error }) => {
+            if (error) console.error("Error eliminando carga del fondo:", error);
+          });
+
+        return { ...inv, historial, monto: nuevoMonto };
+      })
+    );
+  };
 
   const actualizarCampoInversion = (id, campo, valor) => {
     setInversiones((prev) => prev.map((inv) => (inv.id === id ? { ...inv, [campo]: valor } : inv)));
@@ -822,6 +878,7 @@ export default function FinanzasFamiliares() {
       moneda: formInversion.moneda,
       monto: Number(formInversion.monto),
       icono: "otro",
+      historial: [],
     };
     setInversiones((prev) => [...prev, nueva]);
     supabase.from("inversiones").insert(nueva).then(({ error }) => {
@@ -1082,7 +1139,7 @@ export default function FinanzasFamiliares() {
             />
           ) : (
             <p
-              className="text-sm md:text-base font-medium cursor-text rounded px-1 -mx-1 hover:bg-black/5 transition-colors break-words"
+              className="text-sm md:text-base font-medium cursor-text rounded px-1 -mx-1 hover:bg-black/5 transition-colors break-words group"
               style={{
                 color: g.pagado ? TOKENS.muted : TOKENS.text,
                 textDecoration: g.pagado ? "line-through" : "none",
@@ -1091,6 +1148,7 @@ export default function FinanzasFamiliares() {
               title="Tocar para editar"
             >
               {g.nombre}
+              <Pencil size={11} className="inline-block ml-1 opacity-0 group-hover:opacity-40 transition-opacity align-middle" />
             </p>
           )}
           <span
@@ -1127,7 +1185,7 @@ export default function FinanzasFamiliares() {
         />
       ) : (
         <span
-          className={g.esTarjeta ? "text-sm md:text-base font-medium tabular shrink-0 mt-0.5" : "text-sm md:text-base font-medium tabular shrink-0 cursor-text rounded px-1 hover:bg-black/5 transition-colors mt-0.5"}
+          className={g.esTarjeta ? "text-sm md:text-base font-medium tabular shrink-0 mt-0.5" : "text-sm md:text-base font-medium tabular shrink-0 cursor-text rounded px-1 hover:bg-black/5 transition-colors mt-0.5 group"}
           style={{
             color: g.pagado ? TOKENS.muted : TOKENS.text,
             textDecoration: g.pagado ? "line-through" : "none",
@@ -1136,6 +1194,9 @@ export default function FinanzasFamiliares() {
           title={g.esTarjeta ? "Se actualiza solo desde el saldo de la tarjeta" : "Tocar para editar"}
         >
           {fmt(g.esTarjeta ? totalTarjetaEnMes(cargosPorTarjeta[g.tarjetaId], mesIndex) : g.monto)}
+          {!g.esTarjeta && (
+            <Pencil size={11} className="inline-block ml-1 opacity-0 group-hover:opacity-40 transition-opacity align-middle" />
+          )}
         </span>
       )}
 
@@ -1476,12 +1537,13 @@ export default function FinanzasFamiliares() {
                         />
                       ) : (
                         <span
-                          className="ff-display tabular text-lg font-bold cursor-text rounded px-1 hover:bg-black/5 transition-colors"
+                          className="ff-display tabular text-lg font-bold cursor-text rounded px-1 hover:bg-black/5 transition-colors group"
                           style={{ color: TOKENS.text }}
                           onClick={() => setEditandoSueldo(key)}
                           title="Tocar para editar"
                         >
                           {fmt(montoMes)}
+                          <Pencil size={11} className="inline-block ml-1 opacity-0 group-hover:opacity-40 transition-opacity align-middle" />
                         </span>
                       )}
                     </div>
@@ -1577,12 +1639,13 @@ export default function FinanzasFamiliares() {
                           />
                         ) : (
                           <p
-                            className="text-sm font-medium cursor-text rounded px-1 -mx-1 hover:bg-black/5 transition-colors break-words"
+                            className="text-sm font-medium cursor-text rounded px-1 -mx-1 hover:bg-black/5 transition-colors break-words group"
                             style={{ color: TOKENS.text }}
                             onClick={() => setEditandoIngresoExtra(`${ig.id}:nombre`)}
                             title="Tocar para editar"
                           >
                             {ig.nombre}
+                            <Pencil size={11} className="inline-block ml-1 opacity-0 group-hover:opacity-40 transition-opacity align-middle" />
                           </p>
                         )}
                       </div>
@@ -1605,12 +1668,13 @@ export default function FinanzasFamiliares() {
                         />
                       ) : (
                         <span
-                          className="text-sm font-medium tabular shrink-0 cursor-text rounded px-1 hover:bg-black/5 transition-colors"
+                          className="text-sm font-medium tabular shrink-0 cursor-text rounded px-1 hover:bg-black/5 transition-colors group"
                           style={{ color: TOKENS.text }}
                           onClick={() => setEditandoIngresoExtra(`${ig.id}:monto`)}
                           title="Tocar para editar"
                         >
                           {fmt(ig.monto)}
+                          <Pencil size={11} className="inline-block ml-1 opacity-0 group-hover:opacity-40 transition-opacity align-middle" />
                         </span>
                       )}
                       <button
@@ -2029,8 +2093,8 @@ export default function FinanzasFamiliares() {
                 const IconoInv =
                   inv.icono === "custodia" ? Landmark : inv.icono === "plazo" ? PiggyBank : inv.icono === "acciones" ? TrendingUp : LineChart;
                 return (
+                  <React.Fragment key={inv.id}>
                   <div
-                    key={inv.id}
                     className="flex items-center gap-3 rounded-2xl px-4 py-3 border"
                     style={{ background: TOKENS.surface, borderColor: TOKENS.surfaceBorder }}
                   >
@@ -2055,12 +2119,13 @@ export default function FinanzasFamiliares() {
                         />
                       ) : (
                         <p
-                          className="text-sm truncate cursor-text rounded px-1 -mx-1 hover:bg-black/5 transition-colors inline-block max-w-full"
+                          className="text-sm truncate cursor-text rounded px-1 -mx-1 hover:bg-black/5 transition-colors inline-block max-w-full group"
                           style={{ color: TOKENS.text }}
                           onClick={() => setEditandoInversion(`${inv.id}:nombre`)}
                           title="Tocar para editar"
                         >
                           {inv.nombre}
+                          <Pencil size={11} className="inline-block ml-1 opacity-0 group-hover:opacity-40 transition-opacity align-middle" />
                         </p>
                       )}
                       <button
@@ -2073,7 +2138,19 @@ export default function FinanzasFamiliares() {
                       </button>
                     </div>
 
-                    {editandoInversion === `${inv.id}:monto` ? (
+                    <button
+                      onClick={() => setHistorialAbierto(historialAbierto === inv.id ? null : inv.id)}
+                      className="flex items-center gap-0.5 text-[10px] font-medium px-1.5 py-1 rounded-full shrink-0"
+                      style={{ background: TOKENS.bg, color: TOKENS.muted, border: `1px solid ${TOKENS.surfaceBorder}` }}
+                    >
+                      Historial
+                      <ChevronDown
+                        size={12}
+                        style={{ transform: historialAbierto === inv.id ? "rotate(180deg)" : "none", transition: "transform 150ms" }}
+                      />
+                    </button>
+
+                    {editandoInversion === `${inv.id}:monto` && inv.historial.length === 0 ? (
                       <input
                         autoFocus
                         type="number"
@@ -2092,12 +2169,19 @@ export default function FinanzasFamiliares() {
                       />
                     ) : (
                       <span
-                        className="text-sm font-medium tabular shrink-0 cursor-text rounded px-1 hover:bg-black/5 transition-colors"
+                        className={
+                          inv.historial.length === 0
+                            ? "text-sm font-medium tabular shrink-0 cursor-text rounded px-1 hover:bg-black/5 transition-colors group"
+                            : "text-sm font-medium tabular shrink-0 px-1"
+                        }
                         style={{ color: TOKENS.text }}
-                        onClick={() => setEditandoInversion(`${inv.id}:monto`)}
-                        title="Tocar para editar"
+                        onClick={() => inv.historial.length === 0 && setEditandoInversion(`${inv.id}:monto`)}
+                        title={inv.historial.length === 0 ? "Tocar para editar" : "Se actualiza solo con la última carga del historial"}
                       >
                         {fmtMoneda(inv.monto, inv.moneda)}
+                        {inv.historial.length === 0 && (
+                          <Pencil size={11} className="inline-block ml-1 opacity-0 group-hover:opacity-40 transition-opacity align-middle" />
+                        )}
                       </span>
                     )}
 
@@ -2109,6 +2193,94 @@ export default function FinanzasFamiliares() {
                       <X size={14} style={{ color: TOKENS.muted }} />
                     </button>
                   </div>
+
+                  {historialAbierto === inv.id && (
+                    <div
+                      className="rounded-2xl px-4 py-3 border -mt-1"
+                      style={{ background: TOKENS.bg, borderColor: TOKENS.surfaceBorder }}
+                    >
+                      {/* Formulario de carga */}
+                      <div className="flex items-end gap-2 mb-3">
+                        <div className="flex-1">
+                          <label className="text-[10px] block mb-1" style={{ color: TOKENS.muted }}>Fecha</label>
+                          <input
+                            type="date"
+                            value={formHistorial.fecha}
+                            max={hoyISO()}
+                            onChange={(e) => setFormHistorial({ ...formHistorial, fecha: e.target.value })}
+                            className="w-full rounded-lg px-2 py-1.5 text-xs outline-none border"
+                            style={{ borderColor: TOKENS.surfaceBorder, background: TOKENS.surface, color: TOKENS.text }}
+                          />
+                        </div>
+                        <div className="flex-1">
+                          <label className="text-[10px] block mb-1" style={{ color: TOKENS.muted }}>Valor total del fondo</label>
+                          <input
+                            type="number"
+                            placeholder="0"
+                            value={formHistorial.valor}
+                            onChange={(e) => setFormHistorial({ ...formHistorial, valor: e.target.value })}
+                            className="w-full rounded-lg px-2 py-1.5 text-xs outline-none border tabular"
+                            style={{ borderColor: TOKENS.surfaceBorder, background: TOKENS.surface, color: TOKENS.text }}
+                          />
+                        </div>
+                        <button
+                          onClick={() => agregarCargaHistorial(inv.id)}
+                          className="rounded-lg px-3 py-1.5 text-xs font-medium text-white shrink-0"
+                          style={{ background: TOKENS.gold }}
+                        >
+                          Cargar
+                        </button>
+                      </div>
+
+                      {/* Lista de cargas con rendimiento */}
+                      {inv.historial.length === 0 ? (
+                        <p className="text-xs text-center py-2" style={{ color: TOKENS.muted }}>
+                          Todavía no cargaste ningún valor para este fondo.
+                        </p>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {[...inv.historial]
+                            .sort((a, b) => b.fecha.localeCompare(a.fecha))
+                            .map((h, idx, listaDesc) => {
+                              // El "anterior" cronológicamente es el siguiente en esta lista ordenada desc
+                              const anterior = listaDesc[idx + 1];
+                              const diff = anterior ? h.valor - anterior.valor : null;
+                              const pct = anterior && anterior.valor !== 0 ? (diff / anterior.valor) * 100 : null;
+                              return (
+                                <div
+                                  key={h.id}
+                                  className="flex items-center justify-between rounded-lg px-2.5 py-1.5 text-xs"
+                                  style={{ background: TOKENS.surface }}
+                                >
+                                  <span style={{ color: TOKENS.muted }}>
+                                    {new Date(h.fecha + "T00:00:00").toLocaleDateString("es-AR", { day: "2-digit", month: "short", year: "numeric" })}
+                                  </span>
+                                  <span className="font-medium tabular" style={{ color: TOKENS.text }}>
+                                    {fmtMoneda(h.valor, inv.moneda)}
+                                  </span>
+                                  <span
+                                    className="tabular font-medium"
+                                    style={{ color: diff == null ? TOKENS.muted : diff >= 0 ? TOKENS.green : TOKENS.danger }}
+                                  >
+                                    {diff == null
+                                      ? "—"
+                                      : `${diff >= 0 ? "+" : ""}${fmtMoneda(diff, inv.moneda)} (${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%)`}
+                                  </span>
+                                  <button
+                                    onClick={() => eliminarCargaHistorial(inv.id, h.id)}
+                                    className="opacity-40 hover:opacity-90 transition-opacity ml-1"
+                                    aria-label="Eliminar carga"
+                                  >
+                                    <X size={11} style={{ color: TOKENS.muted }} />
+                                  </button>
+                                </div>
+                              );
+                            })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  </React.Fragment>
                 );
               })}
             </div>
@@ -2538,27 +2710,40 @@ export default function FinanzasFamiliares() {
             <div className="space-y-6">
               {TARJETAS.map((t) => {
                 const cargos = cargosPorTarjeta[t.id] || [];
+                const usoDelMes = totalTarjetaEnMes(cargos, mesIndex);
+                const porcentajeUso = t.limite > 0 ? Math.min(100, Math.round((usoDelMes / t.limite) * 100)) : 0;
                 return (
                   <div
                     key={t.id}
                     className="rounded-[24px] border overflow-hidden"
                     style={{ background: TOKENS.surface, borderColor: TOKENS.surfaceBorder, boxShadow: "0 8px 24px rgba(16,23,40,0.05)" }}
                   >
-                    {/* Header de la tarjeta */}
-                    <div className="flex items-center justify-between px-4 py-3.5 border-b" style={{ borderColor: TOKENS.surfaceBorder }}>
-                      <div className="flex items-center gap-2">
-                        <span
-                          className="h-2.5 w-2.5 rounded-full shrink-0"
-                          style={{ background: TOKENS.gold }}
-                        />
-                        <span className="ff-display text-sm font-semibold" style={{ color: TOKENS.text }}>
-                          {t.nombre}
+                    {/* Header con degradé estilo tarjeta física */}
+                    <div className={`bg-gradient-to-br ${t.gradiente} px-4 py-3.5`}>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <CreditCard size={16} className="text-white/90 shrink-0" />
+                          <div className="min-w-0">
+                            <p className="ff-display text-sm font-semibold text-white truncate">{t.nombre}</p>
+                            <p className="text-[10px] text-white/70 truncate">{t.banco} · {t.titular}</p>
+                          </div>
+                        </div>
+                        <div className="text-right shrink-0 ml-2">
+                          <p className="text-xs font-mono text-white/90 tracking-wider">•••• {t.ultimos4}</p>
+                          <p className="text-[10px] text-white/60">Vence {t.vencimiento}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 mt-3">
+                        <div className="flex-1 h-1.5 rounded-full bg-white/20 overflow-hidden">
+                          <div className="h-full rounded-full bg-white/80" style={{ width: `${porcentajeUso}%` }} />
+                        </div>
+                        <span className="text-[10px] text-white/80 shrink-0 tabular">
+                          {fmt(usoDelMes)} / {fmt(t.limite)}
                         </span>
                       </div>
-                      <div className="flex items-center gap-1.5 text-xs" style={{ color: TOKENS.muted }}>
-                        <CreditCard size={13} />
-                        {cargos.length} cargos
-                      </div>
+                    </div>
+                    <div className="flex items-center justify-end px-4 py-2 border-b text-xs" style={{ borderColor: TOKENS.surfaceBorder, color: TOKENS.muted }}>
+                      {cargos.length} cargos en {MESES[mesIndex]}
                     </div>
 
                     {/* Tabla scrolleable */}
@@ -2636,7 +2821,7 @@ export default function FinanzasFamiliares() {
                                     />
                                   ) : (
                                     <span
-                                      className="font-medium cursor-text rounded px-1 -mx-1 hover:bg-black/5 transition-colors"
+                                      className="font-medium cursor-text rounded px-1 -mx-1 hover:bg-black/5 transition-colors group"
                                       style={{ color: TOKENS.text }}
                                       onClick={(e) => {
                                         e.preventDefault();
@@ -2645,6 +2830,7 @@ export default function FinanzasFamiliares() {
                                       title="Tocar para editar"
                                     >
                                       {c.nombre}
+                                      <Pencil size={10} className="inline-block ml-1 opacity-0 group-hover:opacity-40 transition-opacity align-middle" />
                                     </span>
                                   )}
                                   {c.cuotaTotal != null && (
@@ -2692,7 +2878,7 @@ export default function FinanzasFamiliares() {
                                       />
                                     ) : (
                                       <span
-                                        className={esEditable ? "cursor-text rounded px-1 -mx-1 hover:bg-black/5 transition-colors" : ""}
+                                        className={esEditable ? "cursor-text rounded px-1 -mx-1 hover:bg-black/5 transition-colors group" : ""}
                                         style={{ color: i === mesIndex ? TOKENS.gold : TOKENS.text }}
                                         onClick={(e) => {
                                           if (!esEditable) return;
@@ -2702,6 +2888,9 @@ export default function FinanzasFamiliares() {
                                         title={esEditable ? "Tocar para editar" : undefined}
                                       >
                                         {fmt(valor)}
+                                        {esEditable && (
+                                          <Pencil size={10} className="inline-block ml-1 opacity-0 group-hover:opacity-40 transition-opacity align-middle" />
+                                        )}
                                       </span>
                                     )}
                                   </td>
@@ -2894,16 +3083,12 @@ export default function FinanzasFamiliares() {
 
         {seccionActiva === "dashboard" && (
         <>
-        {/* Grilla de KPIs, 2 columnas */}
-        <div className="grid grid-cols-2 gap-3 mb-6">
+        {/* KPIs principales — 4 columnas, más grandes */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
           {[
             { label: "Ingresos totales", valor: fmt(ingresosTotalesMes), nota: "Salarios con aumento", icono: TrendingUp, color: TOKENS.green, fondo: TOKENS.greenSoft },
             { label: "Gastos totales", valor: fmt(gastosTotalesMes), nota: `Tarjetas: ${fmt(gastosTarjetasMes)}`, icono: TrendingDown, color: TOKENS.danger, fondo: TOKENS.redSoft },
-            { label: "Ahorro proyectado", valor: fmt(ahorroProyectado), nota: "Ingresos - Gastos", icono: PiggyBank, color: TOKENS.blue, fondo: TOKENS.purpleSoft },
             { label: "Ahorro real", valor: fmt(ahorroReal), nota: "Ingresos - Pagado", icono: Wallet, color: TOKENS.gold, fondo: TOKENS.goldSoft },
-            { label: "Aporte Ariel", valor: fmt(aporteAriel), nota: "Proporcional al ingreso", icono: RefreshCw, color: TOKENS.blue, fondo: TOKENS.purpleSoft },
-            { label: "Aporte Cielo", valor: fmt(aporteCielo), nota: "Proporcional al ingreso", icono: RefreshCw, color: TOKENS.gold, fondo: TOKENS.goldSoft },
-            { label: "Pagado", valor: fmt(pagadoMes), nota: "Gastos abonados", icono: CheckCircle2, color: TOKENS.green, fondo: TOKENS.greenSoft },
             { label: "Pendiente", valor: fmt(pendienteMes), nota: "Saldo a transferir", icono: Clock, color: TOKENS.orange, fondo: TOKENS.orangeSoft },
           ].map((kpi, i) => {
             const Icono = kpi.icono;
@@ -2926,6 +3111,40 @@ export default function FinanzasFamiliares() {
                   {kpi.valor}
                 </p>
                 <p className="text-xs" style={{ color: TOKENS.muted }}>{kpi.nota}</p>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* KPIs secundarios — 4 columnas, más chicos */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 mb-6">
+          {[
+            { label: "Ahorro proyectado", valor: fmt(ahorroProyectado), icono: PiggyBank, color: TOKENS.blue, fondo: TOKENS.purpleSoft },
+            { label: "Aporte Ariel", valor: fmt(aporteAriel), icono: RefreshCw, color: TOKENS.blue, fondo: TOKENS.purpleSoft },
+            { label: "Aporte Cielo", valor: fmt(aporteCielo), icono: RefreshCw, color: TOKENS.gold, fondo: TOKENS.goldSoft },
+            { label: "Pagado", valor: fmt(pagadoMes), icono: CheckCircle2, color: TOKENS.green, fondo: TOKENS.greenSoft },
+          ].map((kpi, i) => {
+            const Icono = kpi.icono;
+            return (
+              <div
+                key={i}
+                className="rounded-xl p-3 border flex items-center gap-2.5"
+                style={{ background: TOKENS.surface, borderColor: TOKENS.surfaceBorder }}
+              >
+                <div
+                  className="h-7 w-7 rounded-lg flex items-center justify-center shrink-0"
+                  style={{ background: kpi.fondo }}
+                >
+                  <Icono size={13} style={{ color: kpi.color }} />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[9px] font-semibold tracking-wide truncate" style={{ color: TOKENS.muted }}>
+                    {kpi.label.toUpperCase()}
+                  </p>
+                  <p className="ff-display tabular text-sm font-bold" style={{ color: kpi.color }}>
+                    {kpi.valor}
+                  </p>
+                </div>
               </div>
             );
           })}
