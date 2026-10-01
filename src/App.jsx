@@ -475,16 +475,10 @@ export default function FinanzasFamiliares() {
   };
 
   const toggleFijoCategoria = (id) => {
-    let nuevoValor;
-    setCategorias((prev) =>
-      prev.map((c) => {
-        if (c.id === id) {
-          nuevoValor = !c.fijo;
-          return { ...c, fijo: nuevoValor };
-        }
-        return c;
-      })
-    );
+    const actual = categorias.find((c) => c.id === id);
+    if (!actual) return;
+    const nuevoValor = !actual.fijo;
+    setCategorias((prev) => prev.map((c) => (c.id === id ? { ...c, fijo: nuevoValor } : c)));
     supabase.from("categorias_gasto").update({ fijo: nuevoValor }).eq("id", id).then(({ error }) => {
       if (error) console.error("Error actualizando categoría:", error);
     });
@@ -580,18 +574,16 @@ export default function FinanzasFamiliares() {
   };
 
   const togglePagadoGasto = (gastoId) => {
-    let nuevoValor;
-    setGastosMensuales((prev) =>
-      prev.map((g) => {
-        if (g.id === gastoId) {
-          nuevoValor = !g.pagado;
-          return { ...g, pagado: nuevoValor };
-        }
-        return g;
-      })
-    );
+    const actual = gastosMensuales.find((g) => g.id === gastoId);
+    if (!actual) return;
+    const nuevoValor = !actual.pagado;
+    setGastosMensuales((prev) => prev.map((g) => (g.id === gastoId ? { ...g, pagado: nuevoValor } : g)));
     supabase.from("gastos_mensuales").update({ pagado: nuevoValor }).eq("id", gastoId).then(({ error }) => {
-      if (error) console.error("Error actualizando pagado:", error);
+      if (error) {
+        console.error("Error actualizando pagado:", error);
+        // si falla, revertimos para no mostrar algo que no quedó guardado
+        setGastosMensuales((prev) => prev.map((g) => (g.id === gastoId ? { ...g, pagado: !nuevoValor } : g)));
+      }
     });
   };
 
