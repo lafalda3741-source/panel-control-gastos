@@ -154,15 +154,49 @@ function FontImport() {
 
 // ---------- Detalle de tarjetas: meses visibles y cargos de ejemplo ----------
 
-const MESES = ["Ago 2026", "Sep 2026", "Oct 2026", "Nov 2026", "Dic 2026", "Ene 2027", "Feb 2027", "Mar 2027", "Abr 2027"];
+const MESES_ABREV = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+// Meses sin tope: el índice 0 es Ago 2026 y los siguientes se calculan solos (no hay lista fija).
+function nombreMes(i) {
+  const d = new Date(2026, 7 + i, 1);
+  return `${MESES_ABREV[d.getMonth()]} ${d.getFullYear()}`;
+}
+function indicesMeses(desde, cant) {
+  return Array.from({ length: cant }, (_, k) => desde + k).map((i) => ({ i, m: nombreMes(i) }));
+}
+// Sueldos por mes: para meses que todavía no tienen valor cargado se repite el último conocido.
+function montoDelMes(arr, i) {
+  if (!arr || arr.length === 0) return 0;
+  return i < arr.length ? arr[i] : arr[arr.length - 1];
+}
+// Cambia solo el monto de un mes (el resto queda como estaba).
+function conMontoEnMes(arr, i, valor) {
+  const nuevos = [...arr];
+  const previo = montoDelMes(arr, i);
+  const ultimo = nuevos.length ? nuevos[nuevos.length - 1] : 0;
+  while (nuevos.length <= i) nuevos.push(ultimo);
+  nuevos[i] = valor;
+  if (nuevos.length === i + 1) nuevos.push(previo);
+  return nuevos;
+}
+// Cambia el monto desde un mes en adelante (para los aumentos).
+function conMontoDesdeMes(arr, i, valor) {
+  const nuevos = [...arr];
+  const ultimo = nuevos.length ? nuevos[nuevos.length - 1] : 0;
+  while (nuevos.length <= i) nuevos.push(ultimo);
+  for (let k = i; k < nuevos.length; k++) nuevos[k] = valor;
+  return nuevos;
+}
 
 // Mismo anclaje que la función SQL mes_actual_index() (Ago 2026 = índice 0).
 function mesActualIndex() {
   const hoy = new Date();
   return (hoy.getFullYear() - 2026) * 12 + (hoy.getMonth() - 7);
 }
+function mesActualClamp() {
+  return Math.max(mesActualIndex(), 0);
+}
 function proximoMesIndex() {
-  return Math.min(Math.max(mesActualIndex() + 1, 0), MESES.length - 1);
+  return Math.max(mesActualIndex() + 1, 0);
 }
 
 const CARGOS_INICIALES = {
@@ -231,7 +265,11 @@ export default function FinanzasFamiliares() {
 
   const [menuAbierto, setMenuAbierto] = useState(false);
   const [seccionActiva, setSeccionActiva] = useState("dashboard");
-  const [mesIndex, setMesIndex] = useState(1); // arranca en "Sep 2026" (mes actual del sistema)
+  const [mesIndex, setMesIndex] = useState(mesActualClamp()); // arranca en el mes actual del sistema
+  // Columnas de tablas/gráficos: ventana móvil que acompaña al mes elegido.
+  const mesesVista = indicesMeses(Math.max(0, mesIndex - 1), 12);
+  // Opciones de "Mes de inicio": desde Ago 2026 hasta 5 años adelante de hoy (se corre solo).
+  const opcionesMes = indicesMeses(0, Math.max(mesActualIndex() + 61, mesIndex + 13));
 
   // ---- Detalle de tarjetas ----
   const [cargosPorTarjeta, setCargosPorTarjeta] = useState(CARGOS_INICIALES);
@@ -350,8 +388,8 @@ export default function FinanzasFamiliares() {
         // Sueldos de Ariel y Cielo (compartidos con la app móvil)
         const { data: sueldosDb } = await supabase.from("sueldos").select("*");
         const nuevosSueldos = {
-          ariel: { titular: "Ariel", montosPorMes: Array(MESES.length).fill(850000), aumentoPorc: "", aumentosPorMes: {} },
-          cielo: { titular: "Cielo", montosPorMes: Array(MESES.length).fill(620000), aumentoPorc: "", aumentosPorMes: {} },
+          ariel: { titular: "Ariel", montosPorMes: Array(12).fill(850000), aumentoPorc: "", aumentosPorMes: {} },
+          cielo: { titular: "Cielo", montosPorMes: Array(12).fill(620000), aumentoPorc: "", aumentosPorMes: {} },
         };
         const faltantesSueldo = [];
         for (const key of ["ariel", "cielo"]) {
@@ -629,8 +667,8 @@ export default function FinanzasFamiliares() {
   // propaga desde el mes elegido hacia adelante, pero los meses anteriores
   // quedan intactos con lo que tenían.
   const [sueldos, setSueldos] = useState({
-    ariel: { titular: "Ariel", montosPorMes: Array(MESES.length).fill(850000), aumentoPorc: "", aumentosPorMes: {} },
-    cielo: { titular: "Cielo", montosPorMes: Array(MESES.length).fill(620000), aumentoPorc: "", aumentosPorMes: {} },
+    ariel: { titular: "Ariel", montosPorMes: Array(12).fill(850000), aumentoPorc: "", aumentosPorMes: {} },
+    cielo: { titular: "Cielo", montosPorMes: Array(12).fill(620000), aumentoPorc: "", aumentosPorMes: {} },
   });
   const [editandoSueldo, setEditandoSueldo] = useState(null); // "ariel" | "cielo" | null
   const [editandoAumento, setEditandoAumento] = useState(null); // "ariel" | "cielo" | null — toggle del lápiz
@@ -638,8 +676,7 @@ export default function FinanzasFamiliares() {
   const actualizarSueldoMonto = (persona, valor) => {
     setSueldos((prev) => {
       const s = prev[persona];
-      const nuevos = [...s.montosPorMes];
-      nuevos[mesIndex] = valor; // corrige solo el mes que se está viendo
+      const nuevos = conMontoEnMes(s.montosPorMes, mesIndex, valor);
       supabase.from("sueldos").update({ montos_por_mes: nuevos }).eq("persona", persona).then(({ error }) => {
         if (error) console.error("Error actualizando sueldo:", error);
       });
@@ -656,10 +693,9 @@ export default function FinanzasFamiliares() {
       const s = prev[persona];
       const porc = Number(s.aumentoPorc);
       if (!porc) return prev;
-      const montoAnterior = s.montosPorMes[mesIndex];
+      const montoAnterior = montoDelMes(s.montosPorMes, mesIndex);
       const nuevoMonto = Math.round(montoAnterior * (1 + porc / 100));
-      const nuevosMontos = [...s.montosPorMes];
-      for (let i = mesIndex; i < nuevosMontos.length; i++) nuevosMontos[i] = nuevoMonto; // se propaga hacia adelante
+      const nuevosMontos = conMontoDesdeMes(s.montosPorMes, mesIndex, nuevoMonto);
       const nuevosAumentos = { ...s.aumentosPorMes, [mesIndex]: { porc, anterior: montoAnterior, nuevo: nuevoMonto } };
       supabase
         .from("sueldos")
@@ -990,8 +1026,8 @@ export default function FinanzasFamiliares() {
     TARJETAS.reduce((acc, t) => acc + totalTarjetaEnMes(cargosPorTarjeta[t.id], i), 0);
   const gastosFijosMensuales = gastosMensuales.filter((g) => !g.esTarjeta).reduce((acc, g) => acc + g.monto, 0);
 
-  const ingresoArielMes = sueldos.ariel.montosPorMes[mesIndex];
-  const ingresoCieloMes = sueldos.cielo.montosPorMes[mesIndex];
+  const ingresoArielMes = montoDelMes(sueldos.ariel.montosPorMes, mesIndex);
+  const ingresoCieloMes = montoDelMes(sueldos.cielo.montosPorMes, mesIndex);
   const totalIngresosExtra = ingresosExtra.reduce((acc, ig) => acc + ig.monto, 0);
   const ingresosTotalesMes = ingresoArielMes + ingresoCieloMes + totalIngresosExtra;
   // Se calcula igual que la dona/comparativa y que la app móvil: en base a los
@@ -1022,9 +1058,9 @@ export default function FinanzasFamiliares() {
     { name: "Cielo", Ingreso: ingresoCieloMes, Aporte: aporteCielo },
   ];
 
-  const datosComparativaMensual = MESES.map((m, i) => ({
+  const datosComparativaMensual = mesesVista.map(({ m, i }) => ({
     mes: m.split(" ")[0],
-    Ingresos: sueldos.ariel.montosPorMes[i] + sueldos.cielo.montosPorMes[i],
+    Ingresos: montoDelMes(sueldos.ariel.montosPorMes, i) + montoDelMes(sueldos.cielo.montosPorMes, i),
     Gastos: gastosTarjetasEnMes(i) + gastosFijosMensuales,
   }));
 
@@ -1416,11 +1452,10 @@ export default function FinanzasFamiliares() {
             className="ff-display text-sm font-semibold px-4 py-1.5 rounded-full"
             style={{ background: TOKENS.goldSoft, color: TOKENS.gold }}
           >
-            {MESES[mesIndex]}
+            {nombreMes(mesIndex)}
           </span>
           <button
-            onClick={() => setMesIndex((i) => Math.min(MESES.length - 1, i + 1))}
-            disabled={mesIndex === MESES.length - 1}
+            onClick={() => setMesIndex((i) => i + 1)}
             className="h-8 w-8 rounded-full flex items-center justify-center border transition-colors disabled:opacity-30"
             style={{ borderColor: TOKENS.surfaceBorder, background: TOKENS.surface }}
             aria-label="Mes siguiente"
@@ -1455,7 +1490,7 @@ export default function FinanzasFamiliares() {
                   Ingresos
                 </h2>
                 <p className="text-xs mt-1" style={{ color: TOKENS.muted }}>
-                  Tocá el monto o el lápiz para editar. Mes: {MESES[mesIndex]}.
+                  Tocá el monto o el lápiz para editar. Mes: {nombreMes(mesIndex)}.
                 </p>
               </div>
               <button
@@ -1470,7 +1505,7 @@ export default function FinanzasFamiliares() {
             {/* Dos tarjetas de sueldo, estilo "Salario base / Aumento / Proyectado / Aporte" */}
             <div className="space-y-4 mb-6">
               {Object.entries(sueldos).map(([key, s]) => {
-                const montoMes = s.montosPorMes[mesIndex];
+                const montoMes = montoDelMes(s.montosPorMes, mesIndex);
                 const porcPendiente = Number(s.aumentoPorc) || 0;
                 const montoAumento = (montoMes * porcPendiente) / 100;
                 const salarioProyectado = montoMes + montoAumento;
@@ -2735,7 +2770,7 @@ export default function FinanzasFamiliares() {
                       </div>
                     </div>
                     <div className="flex items-center justify-end px-4 py-2 border-b text-xs" style={{ borderColor: TOKENS.surfaceBorder, color: TOKENS.muted }}>
-                      {cargos.length} cargos en {MESES[mesIndex]}
+                      {cargos.length} cargos en {nombreMes(mesIndex)}
                     </div>
 
                     {/* Tabla scrolleable */}
@@ -2752,7 +2787,7 @@ export default function FinanzasFamiliares() {
                             >
                               Cargo
                             </th>
-                            {MESES.map((m, i) => (
+                            {mesesVista.map(({ m, i }) => (
                               <th
                                 key={m}
                                 className="text-right px-3 py-2 font-medium whitespace-nowrap"
@@ -2766,7 +2801,7 @@ export default function FinanzasFamiliares() {
                         <tbody>
                           {cargos.length === 0 && (
                             <tr>
-                              <td colSpan={MESES.length + 1} className="px-4 py-6 text-center" style={{ color: TOKENS.muted }}>
+                              <td colSpan={mesesVista.length + 1} className="px-4 py-6 text-center" style={{ color: TOKENS.muted }}>
                                 Sin cargos cargados todavía
                               </td>
                             </tr>
@@ -2842,7 +2877,7 @@ export default function FinanzasFamiliares() {
                                   </button>
                                 </div>
                               </td>
-                              {MESES.map((m, i) => {
+                              {mesesVista.map(({ m, i }) => {
                                 const valor = valorEnMes(c, i);
                                 const claveEdicion = `${t.id}:${c.id}:monto:${i}`;
                                 const esEditable = valor != null;
@@ -2899,7 +2934,7 @@ export default function FinanzasFamiliares() {
                               >
                                 Total
                               </td>
-                              {MESES.map((m, i) => {
+                              {mesesVista.map(({ m, i }) => {
                                 const totalMes = cargos.reduce((acc, c) => acc + (valorEnMes(c, i) || 0), 0);
                                 return (
                                   <td
@@ -3016,7 +3051,7 @@ export default function FinanzasFamiliares() {
                 className="w-full rounded-xl px-3.5 py-2.5 text-sm mb-4 border outline-none"
                 style={{ background: TOKENS.bg, borderColor: TOKENS.surfaceBorder, color: TOKENS.text }}
               >
-                {MESES.map((m, i) => (
+                {opcionesMes.map(({ m, i }) => (
                   <option key={m} value={i}>{m}</option>
                 ))}
               </select>
