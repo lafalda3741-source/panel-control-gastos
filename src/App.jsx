@@ -350,6 +350,11 @@ export default function FinanzasFamiliares() {
         }
 
         // Gastos mensuales
+        const { data: pagosDb } = await supabase.from("pagos_mensuales").select("gasto_id, mes_index, pagado");
+        const mapaPagos = {};
+        (pagosDb || []).forEach((p) => { mapaPagos[`${p.gasto_id}:${p.mes_index}`] = !!p.pagado; });
+        setPagosPorMes(mapaPagos);
+
         const { data: gastosDb } = await supabase.from("gastos_mensuales").select("*");
         let listaGastos = gastosDb || [];
 
@@ -589,7 +594,7 @@ export default function FinanzasFamiliares() {
   // cada tarjeta (tomado de "Tarjetas") y a partir de ahí es 100% editable —
   // se puede agregar, eliminar y modificar cualquier ítem. Cada gasto pertenece
   // a una categoría (definida en Configuración), que es lo que arma los grupos.
-  const [gastosMensuales, setGastosMensuales] = useState(() =>
+  const [gastosBase, setGastosMensuales] = useState(() =>
     TARJETAS.map((t) => ({
       id: `gm-${t.id}`,
       tarjetaId: t.id,
@@ -599,6 +604,12 @@ export default function FinanzasFamiliares() {
       categoriaId: "cat-tarjetas",
       pagado: false,
     }))
+  );
+  // "Pagado" es por mes: viene de la tabla pagos_mensuales (gasto_id + mes_index), no del gasto en sí.
+  const [pagosPorMes, setPagosPorMes] = useState({}); // { "gastoId:mesIndex": true/false }
+  const gastosMensuales = useMemo(
+    () => gastosBase.map((g) => ({ ...g, pagado: !!pagosPorMes[`${g.id}:${mesIndex}`] })),
+    [gastosBase, pagosPorMes, mesIndex]
   );
   const [editandoGasto, setEditandoGasto] = useState(null); // "gastoId:campo"
   const [modalNuevoGasto, setModalNuevoGasto] = useState(false);
@@ -611,18 +622,18 @@ export default function FinanzasFamiliares() {
     });
   };
 
-  const togglePagadoGasto = (gastoId) => {
-    const actual = gastosMensuales.find((g) => g.id === gastoId);
-    if (!actual) return;
-    const nuevoValor = !actual.pagado;
-    setGastosMensuales((prev) => prev.map((g) => (g.id === gastoId ? { ...g, pagado: nuevoValor } : g)));
-    supabase.from("gastos_mensuales").update({ pagado: nuevoValor }).eq("id", gastoId).then(({ error }) => {
-      if (error) {
-        console.error("Error actualizando pagado:", error);
-        // si falla, revertimos para no mostrar algo que no quedó guardado
-        setGastosMensuales((prev) => prev.map((g) => (g.id === gastoId ? { ...g, pagado: !nuevoValor } : g)));
-      }
-    });
+  const togglePagadoGasto = async (gastoId) => {
+    const clave = `${gastoId}:${mesIndex}`;
+    const nuevoValor = !pagosPorMes[clave];
+    setPagosPorMes((prev) => ({ ...prev, [clave]: nuevoValor }));
+    const { error } = await supabase
+      .from("pagos_mensuales")
+      .upsert({ gasto_id: gastoId, mes_index: mesIndex, pagado: nuevoValor, updated_at: new Date().toISOString() }, { onConflict: "gasto_id,mes_index" });
+    if (error) {
+      console.error("Error actualizando pagado:", error);
+      // si falla, revertimos para no mostrar algo que no quedó guardado
+      setPagosPorMes((prev) => ({ ...prev, [clave]: !nuevoValor }));
+    }
   };
 
   const eliminarGastoMensual = (gastoId) => {
@@ -1438,29 +1449,29 @@ export default function FinanzasFamiliares() {
         {!cargandoDatos && <div className="mb-5" />}
 
         {/* Selector de mes — global, afecta todas las secciones */}
-        <div className="flex items-center justify-center gap-3 mb-6">
+        <div className="flex items-center justify-center gap-4 mb-7">
           <button
             onClick={() => setMesIndex((i) => Math.max(0, i - 1))}
             disabled={mesIndex === 0}
-            className="h-8 w-8 rounded-full flex items-center justify-center border transition-colors disabled:opacity-30"
+            className="h-12 w-12 rounded-full flex items-center justify-center border transition-colors disabled:opacity-30"
             style={{ borderColor: TOKENS.surfaceBorder, background: TOKENS.surface }}
             aria-label="Mes anterior"
           >
-            <ChevronLeft size={15} style={{ color: TOKENS.muted }} />
+            <ChevronLeft size={24} style={{ color: TOKENS.muted }} />
           </button>
           <span
-            className="ff-display text-sm font-semibold px-4 py-1.5 rounded-full"
+            className="ff-display text-xl md:text-2xl font-semibold px-8 py-3 rounded-full min-w-[200px] text-center"
             style={{ background: TOKENS.goldSoft, color: TOKENS.gold }}
           >
             {nombreMes(mesIndex)}
           </span>
           <button
             onClick={() => setMesIndex((i) => i + 1)}
-            className="h-8 w-8 rounded-full flex items-center justify-center border transition-colors disabled:opacity-30"
+            className="h-12 w-12 rounded-full flex items-center justify-center border transition-colors disabled:opacity-30"
             style={{ borderColor: TOKENS.surfaceBorder, background: TOKENS.surface }}
             aria-label="Mes siguiente"
           >
-            <ChevronRight size={15} style={{ color: TOKENS.muted }} />
+            <ChevronRight size={24} style={{ color: TOKENS.muted }} />
           </button>
         </div>
 
@@ -2736,8 +2747,11 @@ export default function FinanzasFamiliares() {
             {/* Un bloque de tabla por tarjeta */}
             <div className="space-y-6">
               {TARJETAS.map((t) => {
-                const cargos = cargosPorTarjeta[t.id] || [];
-                const usoDelMes = totalTarjetaEnMes(cargos, mesIndex);
+                const todosLosCargos = cargosPorTarjeta[t.id] || [];
+                // Se listan los cargos que tienen valor en alguno de los meses visibles (los ya terminados se ocultan).
+                const cargos = todosLosCargos.filter((c) => mesesVista.some(({ i }) => valorEnMes(c, i) != null));
+                const cargosDelMes = todosLosCargos.filter((c) => valorEnMes(c, mesIndex) != null).length;
+                const usoDelMes = totalTarjetaEnMes(todosLosCargos, mesIndex);
                 const porcentajeUso = t.limite > 0 ? Math.min(100, Math.round((usoDelMes / t.limite) * 100)) : 0;
                 return (
                   <div
@@ -2770,7 +2784,7 @@ export default function FinanzasFamiliares() {
                       </div>
                     </div>
                     <div className="flex items-center justify-end px-4 py-2 border-b text-xs" style={{ borderColor: TOKENS.surfaceBorder, color: TOKENS.muted }}>
-                      {cargos.length} cargos en {nombreMes(mesIndex)}
+                      {cargosDelMes} cargos en {nombreMes(mesIndex)}
                     </div>
 
                     {/* Tabla scrolleable */}
@@ -2882,7 +2896,7 @@ export default function FinanzasFamiliares() {
                                 const claveEdicion = `${t.id}:${c.id}:monto:${i}`;
                                 const esEditable = valor != null;
                                 return (
-                                  <td key={m} className="text-right px-3 py-2.5 tabular whitespace-nowrap">
+                                  <td key={m} className="text-right px-3 py-2.5 tabular whitespace-nowrap" style={i === mesIndex ? { background: TOKENS.goldSoft } : undefined}>
                                     {valor == null ? (
                                       <span style={{ color: TOKENS.muted, opacity: 0.4 }}>—</span>
                                     ) : editando === claveEdicion ? (
