@@ -1320,27 +1320,28 @@ export default function FinanzasFamiliares() {
 
   return (
     <div
-      className="min-h-screen w-full ff-body"
+      className="min-h-screen w-full ff-body md:pl-64"
       style={{ backgroundColor: TOKENS.bg, color: TOKENS.text }}
     >
       <FontImport />
-      {/* Overlay del menú vertical */}
+      {/* Overlay del menú vertical (solo en celular, donde el menú es un cajón) */}
       {menuAbierto && (
         <div
-          className="fixed inset-0 z-40 bg-black/60"
+          className="fixed inset-0 z-40 bg-black/60 md:hidden"
           style={{ backdropFilter: "blur(2px)" }}
           onClick={() => setMenuAbierto(false)}
         />
       )}
 
-      {/* Panel del menú vertical */}
+      {/* Menú vertical: en celular es un cajón; desde pantallas medianas queda siempre fijo a la izquierda */}
       <aside
-        className="fixed top-0 left-0 h-full w-64 z-50 border-r transition-transform duration-300 ease-out"
+        className={`fixed top-0 left-0 h-full w-64 z-50 border-r overflow-y-auto transition-transform duration-300 ease-out md:translate-x-0 ${
+          menuAbierto ? "translate-x-0" : "-translate-x-full"
+        }`}
         style={{
-          backgroundColor: "#FFFFFF",
+          backgroundColor: TOKENS.surface,
           borderColor: TOKENS.surfaceBorder,
           boxShadow: "4px 0 24px rgba(16,23,40,0.06)",
-          transform: menuAbierto ? "translateX(0)" : "translateX(-100%)",
         }}
       >
         <div className="flex items-center justify-between px-5 pt-6 pb-8">
@@ -1357,7 +1358,7 @@ export default function FinanzasFamiliares() {
           </div>
           <button
             onClick={() => setMenuAbierto(false)}
-            className="h-8 w-8 rounded-full flex items-center justify-center hover:bg-black/5 transition-colors"
+            className="h-8 w-8 rounded-full flex items-center justify-center hover:bg-black/5 transition-colors md:hidden"
             aria-label="Cerrar menú"
           >
             <X size={16} style={{ color: TOKENS.muted }} />
@@ -1429,7 +1430,7 @@ export default function FinanzasFamiliares() {
         {/* Botón de menú */}
         <button
           onClick={() => setMenuAbierto(true)}
-          className="h-10 w-10 rounded-full flex items-center justify-center border transition-colors mb-5"
+          className="h-10 w-10 rounded-full flex items-center justify-center border transition-colors mb-5 md:hidden"
           style={{ borderColor: TOKENS.surfaceBorder, background: TOKENS.surface }}
           aria-label="Abrir menú"
         >
