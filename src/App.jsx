@@ -268,6 +268,8 @@ export default function FinanzasFamiliares() {
   const [mesIndex, setMesIndex] = useState(mesActualClamp()); // arranca en el mes actual del sistema
   // Columnas de tablas/gráficos: ventana móvil que acompaña al mes elegido.
   const mesesVista = indicesMeses(Math.max(0, mesIndex - 1), 12);
+  // Tabla de la solapa Tarjetas: arranca en el mes elegido (los meses anteriores no se muestran).
+  const mesesTabla = indicesMeses(mesIndex, 12);
   // Opciones de "Mes de inicio": desde Ago 2026 hasta 5 años adelante de hoy (se corre solo).
   const opcionesMes = indicesMeses(0, Math.max(mesActualIndex() + 61, mesIndex + 13));
 
@@ -982,9 +984,8 @@ export default function FinanzasFamiliares() {
       if (!el) return;
       const ths = el.querySelectorAll("thead th");
       const stickyTh = ths[0];
-      // La tabla muestra una ventana de meses que arranca un mes antes del elegido,
-      // así que el mes elegido es la columna 1 (o 0 si es el primer mes) + la columna fija.
-      const targetTh = ths[mesIndex - Math.max(0, mesIndex - 1) + 1];
+      // La tabla arranca en el mes elegido: es la primera columna después de la fija.
+      const targetTh = ths[1];
       if (stickyTh && targetTh) {
         const stickyWidth = stickyTh.getBoundingClientRect().width;
         el.scrollTo({ left: targetTh.offsetLeft - stickyWidth, behavior: "smooth" });
@@ -2751,8 +2752,19 @@ export default function FinanzasFamiliares() {
             <div className="space-y-6">
               {TARJETAS.map((t) => {
                 const todosLosCargos = cargosPorTarjeta[t.id] || [];
-                // Se listan los cargos que tienen valor en alguno de los meses visibles (los ya terminados se ocultan).
-                const cargos = todosLosCargos.filter((c) => mesesVista.some(({ i }) => valorEnMes(c, i) != null));
+                // Gasto mensual de esta tarjeta: de ahí sale si el mes en que terminó un cargo figura como pagado.
+                const gastoTarjeta = gastosBase.find((g) => g.esTarjeta && g.tarjetaId === t.id);
+                const ultimoMesDe = (c) => (c.cuotaTotal != null ? (c.mesInicio || 0) + c.cuotaTotal - 1 : null);
+                const terminoAntes = (c) => {
+                  const u = ultimoMesDe(c);
+                  return u != null && u < mesIndex;
+                };
+                const pagadoEnMes = (mes) => !!(gastoTarjeta && pagosPorMes[`${gastoTarjeta.id}:${mes}`]);
+                // Se listan los cargos con valor desde el mes elegido en adelante. Un cargo que ya terminó
+                // sigue apareciendo hasta que el mes en que terminó figure como pagado en Gastos mensuales.
+                const cargos = todosLosCargos.filter(
+                  (c) => mesesTabla.some(({ i }) => valorEnMes(c, i) != null) || (terminoAntes(c) && !pagadoEnMes(ultimoMesDe(c)))
+                );
                 const cargosDelMes = todosLosCargos.filter((c) => valorEnMes(c, mesIndex) != null).length;
                 const usoDelMes = totalTarjetaEnMes(todosLosCargos, mesIndex);
                 const porcentajeUso = t.limite > 0 ? Math.min(100, Math.round((usoDelMes / t.limite) * 100)) : 0;
@@ -2804,7 +2816,7 @@ export default function FinanzasFamiliares() {
                             >
                               Cargo
                             </th>
-                            {mesesVista.map(({ m, i }) => (
+                            {mesesTabla.map(({ m, i }) => (
                               <th
                                 key={m}
                                 className="text-right px-3 py-2 font-medium whitespace-nowrap"
@@ -2818,7 +2830,7 @@ export default function FinanzasFamiliares() {
                         <tbody>
                           {cargos.length === 0 && (
                             <tr>
-                              <td colSpan={mesesVista.length + 1} className="px-4 py-6 text-center" style={{ color: TOKENS.muted }}>
+                              <td colSpan={mesesTabla.length + 1} className="px-4 py-6 text-center" style={{ color: TOKENS.muted }}>
                                 Sin cargos cargados todavía
                               </td>
                             </tr>
@@ -2885,6 +2897,11 @@ export default function FinanzasFamiliares() {
                                       1/{c.cuotaTotal}
                                     </span>
                                   )}
+                                  {terminoAntes(c) && (
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: TOKENS.surfaceBorder, color: TOKENS.muted }}>
+                                      Terminó en {nombreMes(ultimoMesDe(c))}
+                                    </span>
+                                  )}
                                   <button
                                     onClick={() => eliminarCargo(t.id, c.id)}
                                     className="ml-0.5 opacity-40 hover:opacity-90 transition-opacity"
@@ -2894,7 +2911,7 @@ export default function FinanzasFamiliares() {
                                   </button>
                                 </div>
                               </td>
-                              {mesesVista.map(({ m, i }) => {
+                              {mesesTabla.map(({ m, i }) => {
                                 const valor = valorEnMes(c, i);
                                 const claveEdicion = `${t.id}:${c.id}:monto:${i}`;
                                 const esEditable = valor != null;
@@ -2951,7 +2968,7 @@ export default function FinanzasFamiliares() {
                               >
                                 Total
                               </td>
-                              {mesesVista.map(({ m, i }) => {
+                              {mesesTabla.map(({ m, i }) => {
                                 const totalMes = cargos.reduce((acc, c) => acc + (valorEnMes(c, i) || 0), 0);
                                 return (
                                   <td
