@@ -3144,13 +3144,15 @@ export default function FinanzasFamiliares() {
 
         {seccionActiva === "dashboard" && (
         <>
-        {/* KPIs principales — 4 columnas, más grandes */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+        {/* KPIs del mes — 6 tarjetas: ingresos, gastos, saldo, aportes y gastos pagados */}
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-6">
           {[
             { label: "Ingresos totales", valor: fmt(ingresosTotalesMes), nota: "Salarios con aumento", icono: TrendingUp, color: TOKENS.green, fondo: TOKENS.greenSoft },
             { label: "Gastos totales", valor: fmt(gastosTotalesMes), nota: `Tarjetas: ${fmt(gastosTarjetasMes)}`, icono: TrendingDown, color: TOKENS.danger, fondo: TOKENS.redSoft },
-            { label: "Ahorro real", valor: fmt(ahorroReal), nota: "Ingresos - Pagado", icono: Wallet, color: TOKENS.gold, fondo: TOKENS.goldSoft },
-            { label: "Pendiente", valor: fmt(pendienteMes), nota: "Saldo a transferir", icono: Clock, color: TOKENS.orange, fondo: TOKENS.orangeSoft },
+            { label: "Saldo del mes", valor: fmt(ahorroProyectado), nota: "Ingresos - Gastos totales", icono: Wallet, color: ahorroProyectado >= 0 ? TOKENS.gold : TOKENS.danger, fondo: ahorroProyectado >= 0 ? TOKENS.goldSoft : TOKENS.redSoft },
+            { label: "Aporte Ariel", valor: fmt(aporteAriel), nota: "Parte de los gastos según su ingreso", icono: RefreshCw, color: TOKENS.blue, fondo: TOKENS.purpleSoft },
+            { label: "Aporte Cielo", valor: fmt(aporteCielo), nota: "Parte de los gastos según su ingreso", icono: RefreshCw, color: TOKENS.gold, fondo: TOKENS.goldSoft },
+            { label: "Gastos pagados", valor: fmt(pagadoMes), nota: `De ${fmt(gastosTotalesMes)} del mes`, icono: CheckCircle2, color: TOKENS.green, fondo: TOKENS.greenSoft },
           ].map((kpi, i) => {
             const Icono = kpi.icono;
             return (
@@ -3172,40 +3174,6 @@ export default function FinanzasFamiliares() {
                   {kpi.valor}
                 </p>
                 <p className="text-xs" style={{ color: TOKENS.muted }}>{kpi.nota}</p>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* KPIs secundarios — 4 columnas, más chicos */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 mb-6">
-          {[
-            { label: "Ahorro proyectado", valor: fmt(ahorroProyectado), icono: PiggyBank, color: TOKENS.blue, fondo: TOKENS.purpleSoft },
-            { label: "Aporte Ariel", valor: fmt(aporteAriel), icono: RefreshCw, color: TOKENS.blue, fondo: TOKENS.purpleSoft },
-            { label: "Aporte Cielo", valor: fmt(aporteCielo), icono: RefreshCw, color: TOKENS.gold, fondo: TOKENS.goldSoft },
-            { label: "Pagado", valor: fmt(pagadoMes), icono: CheckCircle2, color: TOKENS.green, fondo: TOKENS.greenSoft },
-          ].map((kpi, i) => {
-            const Icono = kpi.icono;
-            return (
-              <div
-                key={i}
-                className="rounded-xl p-3 border flex items-center gap-2.5"
-                style={{ background: TOKENS.surface, borderColor: TOKENS.surfaceBorder }}
-              >
-                <div
-                  className="h-7 w-7 rounded-lg flex items-center justify-center shrink-0"
-                  style={{ background: kpi.fondo }}
-                >
-                  <Icono size={13} style={{ color: kpi.color }} />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-[9px] font-semibold tracking-wide truncate" style={{ color: TOKENS.muted }}>
-                    {kpi.label.toUpperCase()}
-                  </p>
-                  <p className="ff-display tabular text-sm font-bold" style={{ color: kpi.color }}>
-                    {kpi.valor}
-                  </p>
-                </div>
               </div>
             );
           })}
