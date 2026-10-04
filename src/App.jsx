@@ -61,7 +61,7 @@ const TARJETAS = [
   {
     id: "visa-ariel",
     nombre: "VISA ARIEL",
-    banco: "Banco Galicia",
+    banco: "Banco Hipotecario",
     titular: "Ariel",
     ultimos4: "4821",
     saldo: 187430,
@@ -72,7 +72,7 @@ const TARJETAS = [
   {
     id: "visa-cielo",
     nombre: "VISA CIELO",
-    banco: "Banco Galicia",
+    banco: "Banco Hipotecario",
     titular: "Cielo",
     ultimos4: "7734",
     saldo: 94210,
@@ -83,7 +83,7 @@ const TARJETAS = [
   {
     id: "cabal-cielo",
     nombre: "CABAL CIELO",
-    banco: "Banco Provincia",
+    banco: "Banco Credicoop",
     titular: "Cielo",
     ultimos4: "1092",
     saldo: 52680,
@@ -94,7 +94,7 @@ const TARJETAS = [
   {
     id: "cabal-ariel",
     nombre: "CABAL ARIEL",
-    banco: "Banco Provincia",
+    banco: "Banco Credicoop",
     titular: "Ariel",
     ultimos4: "5563",
     saldo: 138900,
