@@ -63,7 +63,8 @@ const LOGOS_BANCO = {
 
 // ---------- Datos de ejemplo (reemplazar con datos reales del Excel) ----------
 
-const TARJETAS = [
+// Tarjetas de arranque (por si todavía no cargó la base). Las reales se leen de la tabla "tarjetas" y se administran en Configuración.
+const TARJETAS_INICIALES = [
   {
     id: "visa-ariel",
     nombre: "VISA ARIEL",
@@ -72,7 +73,7 @@ const TARJETAS = [
     ultimos4: "4821",
     saldo: 187430,
     limite: 450000,
-    gradiente: "from-[#F59A3A] via-[#F08018] to-[#D96B0C]", // Banco Hipotecario: naranja
+    color: "#F08018", // Banco Hipotecario: naranja
     vencimiento: "12/28",
   },
   {
@@ -83,7 +84,7 @@ const TARJETAS = [
     ultimos4: "7734",
     saldo: 94210,
     limite: 300000,
-    gradiente: "from-[#F59A3A] via-[#F08018] to-[#D96B0C]", // Banco Hipotecario: naranja
+    color: "#F08018", // Banco Hipotecario: naranja
     vencimiento: "03/27",
   },
   {
@@ -94,8 +95,7 @@ const TARJETAS = [
     ultimos4: "1092",
     saldo: 52680,
     limite: 200000,
-    gradiente: "from-[#6E655B] via-[#585048] to-[#40392F]", // Banco Credicoop: gris pardo
-    franja: true,
+    color: "#585048", // Banco Credicoop: gris pardo
     vencimiento: "07/27",
   },
   {
@@ -106,11 +106,85 @@ const TARJETAS = [
     ultimos4: "5563",
     saldo: 138900,
     limite: 350000,
-    gradiente: "from-[#6E655B] via-[#585048] to-[#40392F]", // Banco Credicoop: gris pardo
-    franja: true,
+    color: "#585048", // Banco Credicoop: gris pardo
     vencimiento: "09/28",
   },
 ];
+
+// Del color base de la tarjeta se arma el degradé del encabezado (más claro arriba, más oscuro abajo).
+function colorValido(hex) {
+  return /^#[0-9a-f]{6}$/i.test(hex || "") ? hex : "#0F766E";
+}
+function mezclarColor(hex, hacia, f) {
+  const n = parseInt(colorValido(hex).slice(1), 16);
+  const destino = hacia === "blanco" ? 255 : 0;
+  return (
+    "#" +
+    [(n >> 16) & 255, (n >> 8) & 255, n & 255]
+      .map((v) => Math.round(v + (destino - v) * f).toString(16).padStart(2, "0"))
+      .join("")
+  );
+}
+function gradienteDeColor(hex) {
+  const base = colorValido(hex);
+  return `linear-gradient(135deg, ${mezclarColor(base, "blanco", 0.18)}, ${base} 55%, ${mezclarColor(base, "negro", 0.3)})`;
+}
+// Si el banco es uno de los que tienen logo cargado, lo usa; si no, queda el ícono genérico.
+function logoDeBanco(banco) {
+  const b = (banco || "").toLowerCase();
+  if (b.includes("hipotecario")) return LOGOS_BANCO["Banco Hipotecario"];
+  if (b.includes("credicoop")) return LOGOS_BANCO["Banco Credicoop"];
+  return null;
+}
+// Fila de la tabla "tarjetas" -> tarjeta que usa la pantalla (titular se muestra como "Ariel" / "Cielo").
+function tarjetaDesdeDb(r) {
+  return {
+    id: r.id,
+    nombre: r.nombre || r.id,
+    banco: r.banco || "",
+    logo: r.logo || "",
+    titular: r.titular === "cielo" ? "Cielo" : "Ariel",
+    ultimos4: r.ultimos4 || "",
+    limite: Number(r.limite) || 0,
+    vencimiento: r.vencimiento || "",
+    color: colorValido(r.color),
+  };
+}
+// Convierte una imagen (.jpg, .png...) en un logo chico listo para guardar: máx. 72 px de alto y 240 de ancho.
+function archivoALogo(file) {
+  return new Promise((resolve, reject) => {
+    if (!file || !file.type || !file.type.startsWith("image/")) {
+      reject(new Error("El archivo no es una imagen."));
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      reject(new Error("La imagen pesa más de 8 MB."));
+      return;
+    }
+    const lector = new FileReader();
+    lector.onerror = () => reject(new Error("No se pudo leer la imagen."));
+    lector.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("No se pudo abrir la imagen."));
+      img.onload = () => {
+        const escala = Math.min(1, 72 / img.height, 240 / img.width);
+        const w = Math.max(1, Math.round(img.width * escala));
+        const h = Math.max(1, Math.round(img.height * escala));
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = "#FFFFFF"; // el .jpg no tiene transparencia: fondo blanco, igual que el recuadro del logo
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL("image/jpeg", 0.88));
+      };
+      img.src = lector.result;
+    };
+    lector.readAsDataURL(file);
+  });
+}
+const FORM_TARJETA_VACIO = { nombre: "", banco: "", logo: "", titular: "Ariel", ultimos4: "", limite: "", vencimiento: "", color: "#6366F1" };
 
 // ---------- Sistema de diseño ----------
 // Paleta copiada de la referencia: teal + violeta, fondo gris muy claro, cards blancas.
@@ -283,6 +357,7 @@ export default function FinanzasFamiliares() {
 
   // ---- Detalle de tarjetas ----
   const [cargosPorTarjeta, setCargosPorTarjeta] = useState(CARGOS_INICIALES);
+  const [tarjetas, setTarjetas] = useState(TARJETAS_INICIALES); // se carga de Supabase; se administra en Configuración
   const [saldosTarjetas, setSaldosTarjetas] = useState({}); // { [tarjetaId]: saldo } — viene de la tabla "tarjetas", mantenida por tu trigger
   const [cargandoDatos, setCargandoDatos] = useState(true);
   const [arrastrando, setArrastrando] = useState(null); // { tarjetaId, cargoId }
@@ -290,7 +365,7 @@ export default function FinanzasFamiliares() {
   const [editando, setEditando] = useState(null); // "tarjetaId:cargoId:campo"
   const [modalNuevaCarga, setModalNuevaCarga] = useState(false);
   const [formCarga, setFormCarga] = useState({
-    tarjetaId: TARJETAS[0].id,
+    tarjetaId: TARJETAS_INICIALES[0].id,
     tipo: "cuotas", // "cuotas" | "recurrente"
     descripcion: "",
     montoTotal: "",
@@ -308,6 +383,9 @@ export default function FinanzasFamiliares() {
     { id: "cat-tarjetas", nombre: "Tarjetas de crédito", color: TOKENS.gold, fijo: true },
   ]);
   const [formCategoria, setFormCategoria] = useState({ nombre: "", color: "#0F766E" });
+  const [formTarjeta, setFormTarjeta] = useState(FORM_TARJETA_VACIO);
+  const [editandoTarjetaId, setEditandoTarjetaId] = useState(null);
+  const [errorTarjeta, setErrorTarjeta] = useState(null);
 
   // ============================================================
   // Carga inicial desde Supabase (una sola vez al montar) + siembra:
@@ -318,11 +396,17 @@ export default function FinanzasFamiliares() {
     const cargarDatos = async () => {
       try {
         // Saldo real de cada tarjeta (columna mantenida por tu trigger de Postgres)
-        const { data: tarjetasDb } = await supabase.from("tarjetas").select("id, saldo");
+        const { data: tarjetasDb } = await supabase.from("tarjetas").select("*").order("orden");
+        let listaTarjetas = TARJETAS_INICIALES;
         if (tarjetasDb && tarjetasDb.length > 0) {
           const saldos = {};
           tarjetasDb.forEach((t) => (saldos[t.id] = Number(t.saldo) || 0));
           setSaldosTarjetas(saldos);
+          const desdeDb = tarjetasDb.filter((r) => r.nombre).map(tarjetaDesdeDb);
+          if (desdeDb.length > 0) {
+            listaTarjetas = desdeDb;
+            setTarjetas(desdeDb);
+          }
         }
 
         // Categorías
@@ -343,7 +427,7 @@ export default function FinanzasFamiliares() {
         const { data: cargosDb } = await supabase.from("cargos_tarjeta").select("*").order("orden");
         if (cargosDb && cargosDb.length > 0) {
           const agrupados = {};
-          TARJETAS.forEach((t) => (agrupados[t.id] = []));
+          listaTarjetas.forEach((t) => (agrupados[t.id] = []));
           cargosDb.forEach((c) => {
             if (!agrupados[c.tarjeta_id]) agrupados[c.tarjeta_id] = [];
             agrupados[c.tarjeta_id].push({ id: c.id, nombre: c.nombre, monto: Number(c.monto), cuotaTotal: c.cuota_total, mesInicio: Number.isFinite(Number(c.mes_inicio)) ? Number(c.mes_inicio) : 0 });
@@ -371,7 +455,7 @@ export default function FinanzasFamiliares() {
         // Reparación automática: si falta alguna de las 4 tarjetas (por ejemplo, si
         // alguna vez se borró sin querer), la vuelve a crear.
         const idsTarjetaPresentes = new Set(listaGastos.filter((g) => g.es_tarjeta).map((g) => g.tarjeta_id));
-        const faltantesTarjeta = TARJETAS.filter((t) => !idsTarjetaPresentes.has(t.id));
+        const faltantesTarjeta = listaTarjetas.filter((t) => !idsTarjetaPresentes.has(t.id));
         if (faltantesTarjeta.length > 0) {
           const nuevasFilas = faltantesTarjeta.map((t) => ({
             id: `gm-${t.id}`,
@@ -527,6 +611,139 @@ export default function FinanzasFamiliares() {
     });
   };
 
+  // ---- Tarjetas de crédito (Configuración): alta, edición y baja ----
+  const editarTarjeta = (t) => {
+    setEditandoTarjetaId(t.id);
+    setErrorTarjeta(null);
+    setFormTarjeta({
+      nombre: t.nombre,
+      banco: t.banco,
+      logo: t.logo || "",
+      titular: t.titular,
+      ultimos4: t.ultimos4,
+      limite: t.limite ? String(t.limite) : "",
+      vencimiento: t.vencimiento,
+      color: t.color,
+    });
+  };
+
+  const cargarLogoTarjeta = async (file) => {
+    try {
+      const logo = await archivoALogo(file);
+      setFormTarjeta((f) => ({ ...f, logo }));
+      setErrorTarjeta(null);
+    } catch (err) {
+      setErrorTarjeta(err.message || "No se pudo cargar la imagen.");
+    }
+  };
+
+  const pegarLogoTarjeta = (e) => {
+    const item = Array.from(e.clipboardData?.items || []).find((i) => i.type && i.type.startsWith("image/"));
+    if (!item) return;
+    e.preventDefault();
+    cargarLogoTarjeta(item.getAsFile());
+  };
+
+  const cancelarEdicionTarjeta = () => {
+    setEditandoTarjetaId(null);
+    setErrorTarjeta(null);
+    setFormTarjeta(FORM_TARJETA_VACIO);
+  };
+
+  const guardarTarjeta = async () => {
+    const nombre = formTarjeta.nombre.trim();
+    if (!nombre) {
+      setErrorTarjeta("Poné un nombre para la tarjeta.");
+      return;
+    }
+    const datos = {
+      nombre,
+      banco: formTarjeta.banco.trim(),
+      logo: formTarjeta.logo || null,
+      titular: formTarjeta.titular === "Cielo" ? "cielo" : "ariel",
+      ultimos4: formTarjeta.ultimos4.replace(/\D/g, "").slice(0, 4),
+      limite: Number(formTarjeta.limite) || 0,
+      vencimiento: formTarjeta.vencimiento.trim(),
+      color: colorValido(formTarjeta.color),
+    };
+    setErrorTarjeta(null);
+
+    if (editandoTarjetaId) {
+      const id = editandoTarjetaId;
+      const { error } = await supabase.from("tarjetas").update(datos).eq("id", id);
+      if (error) {
+        setErrorTarjeta(`No se pudo guardar: ${error.message}`);
+        return;
+      }
+      setTarjetas((prev) => prev.map((t) => (t.id === id ? tarjetaDesdeDb({ id, ...datos }) : t)));
+      // El gasto mensual de la tarjeta lleva el mismo nombre.
+      setGastosMensuales((prev) => prev.map((g) => (g.tarjetaId === id ? { ...g, nombre } : g)));
+      supabase.from("gastos_mensuales").update({ nombre }).eq("tarjeta_id", id).then(({ error: e2 }) => {
+        if (e2) console.error("Error actualizando nombre del gasto de la tarjeta:", e2);
+      });
+    } else {
+      const id = `tj${Date.now()}`;
+      const { error } = await supabase.from("tarjetas").insert({ id, ...datos, saldo: 0, orden: tarjetas.length });
+      if (error) {
+        setErrorTarjeta(`No se pudo crear la tarjeta: ${error.message}`);
+        return;
+      }
+      // Igual que las demás: tiene su gasto mensual automático (suma de sus cargos).
+      const gasto = { id: `gm-${id}`, nombre, monto: 0, esTarjeta: true, tarjetaId: id, categoriaId: "cat-tarjetas", pagado: false };
+      const { error: errGasto } = await supabase.from("gastos_mensuales").insert({
+        id: gasto.id,
+        nombre,
+        monto: 0,
+        es_tarjeta: true,
+        tarjeta_id: id,
+        categoria_id: "cat-tarjetas",
+        pagado: false,
+      });
+      if (errGasto) {
+        console.error("Error creando el gasto mensual de la tarjeta:", errGasto);
+        setErrorTarjeta('La tarjeta se creó, pero no se pudo crear su gasto mensual (revisá que exista la categoría "Tarjetas de crédito").');
+      } else {
+        setGastosMensuales((prev) => [...prev, gasto]);
+      }
+      setTarjetas((prev) => [...prev, tarjetaDesdeDb({ id, ...datos })]);
+      setCargosPorTarjeta((prev) => ({ ...prev, [id]: [] }));
+    }
+    setEditandoTarjetaId(null);
+    setFormTarjeta(FORM_TARJETA_VACIO);
+  };
+
+  const eliminarTarjeta = async (id) => {
+    const t = tarjetas.find((x) => x.id === id);
+    if (!t) return;
+    const cantCargos = (cargosPorTarjeta[id] || []).length;
+    if (
+      !window.confirm(
+        `¿Seguro que querés eliminar "${t.nombre}"?\n\nSe borran también sus ${cantCargos} cargo${cantCargos === 1 ? "" : "s"} y su gasto mensual. No se puede deshacer.`
+      )
+    )
+      return;
+    setErrorTarjeta(null);
+    // Primero su gasto mensual (y con él sus pagos); después la tarjeta, que se lleva sus cargos.
+    const { error: e1 } = await supabase.from("gastos_mensuales").delete().eq("tarjeta_id", id);
+    if (e1) {
+      setErrorTarjeta(`No se pudo eliminar: ${e1.message}`);
+      return;
+    }
+    const { error: e2 } = await supabase.from("tarjetas").delete().eq("id", id);
+    if (e2) {
+      setErrorTarjeta(`No se pudo eliminar: ${e2.message}`);
+      return;
+    }
+    setTarjetas((prev) => prev.filter((x) => x.id !== id));
+    setCargosPorTarjeta((prev) => {
+      const nuevo = { ...prev };
+      delete nuevo[id];
+      return nuevo;
+    });
+    setGastosMensuales((prev) => prev.filter((g) => g.tarjetaId !== id));
+    if (editandoTarjetaId === id) cancelarEdicionTarjeta();
+  };
+
   const toggleFijoCategoria = (id) => {
     const actual = categorias.find((c) => c.id === id);
     if (!actual) return;
@@ -605,7 +822,7 @@ export default function FinanzasFamiliares() {
   // se puede agregar, eliminar y modificar cualquier ítem. Cada gasto pertenece
   // a una categoría (definida en Configuración), que es lo que arma los grupos.
   const [gastosBase, setGastosMensuales] = useState(() =>
-    TARJETAS.map((t) => ({
+    TARJETAS_INICIALES.map((t) => ({
       id: `gm-${t.id}`,
       tarjetaId: t.id,
       nombre: t.nombre,
@@ -1045,7 +1262,7 @@ export default function FinanzasFamiliares() {
 
   // ---- Cálculos para el Dashboard ----
   const gastosTarjetasEnMes = (i) =>
-    TARJETAS.reduce((acc, t) => acc + totalTarjetaEnMes(cargosPorTarjeta[t.id], i), 0);
+    tarjetas.reduce((acc, t) => acc + totalTarjetaEnMes(cargosPorTarjeta[t.id], i), 0);
   const gastosFijosMensuales = gastosMensuales.filter((g) => !g.esTarjeta).reduce((acc, g) => acc + g.monto, 0);
 
   const ingresoArielMes = montoDelMes(sueldos.ariel.montosPorMes, mesIndex);
@@ -1068,7 +1285,7 @@ export default function FinanzasFamiliares() {
 
   const coloresDona = [TOKENS.gold, TOKENS.blue, TOKENS.green, TOKENS.orange, "#5EEAD4"];
   const datosDona = [
-    ...TARJETAS.map((t) => ({ name: t.nombre, value: totalTarjetaEnMes(cargosPorTarjeta[t.id], mesIndex) })),
+    ...tarjetas.map((t) => ({ name: t.nombre, value: totalTarjetaEnMes(cargosPorTarjeta[t.id], mesIndex) })),
     { name: "Gastos fijos", value: gastosFijosMensuales },
   ]
     .filter((d) => d.value > 0)
@@ -2610,6 +2827,230 @@ export default function FinanzasFamiliares() {
               </div>
             </div>
 
+            {/* Tarjetas de Crédito */}
+            <div
+              className="rounded-[24px] p-5 border mt-4"
+              style={{ background: TOKENS.surface, borderColor: TOKENS.surfaceBorder, boxShadow: "0 8px 24px rgba(16,23,40,0.05)" }}
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <CreditCard size={18} style={{ color: TOKENS.gold }} />
+                <span className="ff-display text-base font-bold" style={{ color: TOKENS.text }}>
+                  Tarjetas de Crédito
+                </span>
+              </div>
+              <p className="text-xs mb-4" style={{ color: TOKENS.muted }}>
+                Cada tarjeta aparece en Cuotas de Tarjetas, en Gastos Mensuales y en el tablero, y en la app de su titular para cargarle consumos.
+              </p>
+
+              <div className="space-y-2 mb-5">
+                {tarjetas.map((t) => (
+                  <div key={t.id} className="flex items-center gap-3 rounded-2xl px-4 py-3" style={{ background: TOKENS.bg }}>
+                    <span className="h-9 w-9 rounded-xl shrink-0" style={{ background: gradienteDeColor(t.color) }} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold truncate" style={{ color: TOKENS.text }}>{t.nombre}</p>
+                      <p className="text-xs truncate" style={{ color: TOKENS.muted }}>
+                        {t.banco ? `${t.banco} · ` : ""}{t.titular}{t.ultimos4 ? ` · •••• ${t.ultimos4}` : ""}
+                        {t.limite ? ` · Límite ${fmt(t.limite)}` : ""}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => editarTarjeta(t)}
+                      className="h-8 w-8 rounded-full flex items-center justify-center shrink-0"
+                      style={{ background: TOKENS.surfaceBorder }}
+                      aria-label={`Editar ${t.nombre}`}
+                    >
+                      <Pencil size={14} style={{ color: TOKENS.muted }} />
+                    </button>
+                    <button
+                      onClick={() => eliminarTarjeta(t.id)}
+                      className="h-8 w-8 rounded-full flex items-center justify-center shrink-0"
+                      style={{ background: TOKENS.redSoft }}
+                      aria-label={`Eliminar ${t.nombre}`}
+                    >
+                      <X size={14} style={{ color: TOKENS.danger }} />
+                    </button>
+                  </div>
+                ))}
+                {tarjetas.length === 0 && (
+                  <p className="text-sm text-center py-4" style={{ color: TOKENS.muted }}>Todavía no hay tarjetas cargadas</p>
+                )}
+              </div>
+
+              <p className="text-xs font-medium mb-3" style={{ color: TOKENS.muted }}>
+                {editandoTarjetaId ? "Editar tarjeta" : "Nueva tarjeta"}
+              </p>
+
+              <label className="block text-xs font-medium mb-1.5" style={{ color: TOKENS.muted }}>Nombre</label>
+              <input
+                type="text"
+                value={formTarjeta.nombre}
+                onChange={(e) => setFormTarjeta({ ...formTarjeta, nombre: e.target.value })}
+                placeholder="Ej: MASTERCARD ARIEL"
+                className="w-full rounded-xl px-3.5 py-2.5 text-sm mb-3 border outline-none"
+                style={{ background: TOKENS.bg, borderColor: TOKENS.surfaceBorder, color: TOKENS.text }}
+              />
+
+              <label className="block text-xs font-medium mb-1.5" style={{ color: TOKENS.muted }}>Banco</label>
+              <input
+                type="text"
+                value={formTarjeta.banco}
+                onChange={(e) => setFormTarjeta({ ...formTarjeta, banco: e.target.value })}
+                placeholder="Ej: Banco Galicia"
+                className="w-full rounded-xl px-3.5 py-2.5 text-sm mb-3 border outline-none"
+                style={{ background: TOKENS.bg, borderColor: TOKENS.surfaceBorder, color: TOKENS.text }}
+              />
+
+              <label className="block text-xs font-medium mb-1.5" style={{ color: TOKENS.muted }}>Ícono del banco (opcional)</label>
+              <div className="flex items-center gap-3 mb-3">
+                <div
+                  className="h-14 w-20 rounded-xl border flex items-center justify-center overflow-hidden shrink-0 bg-white"
+                  style={{ borderColor: TOKENS.surfaceBorder }}
+                >
+                  {formTarjeta.logo || logoDeBanco(formTarjeta.banco) ? (
+                    <img src={formTarjeta.logo || logoDeBanco(formTarjeta.banco)} alt="Ícono del banco" className="max-h-12 max-w-[4.5rem] w-auto block" />
+                  ) : (
+                    <CreditCard size={20} style={{ color: "#94A3B8" }} />
+                  )}
+                </div>
+                <div className="flex-1 min-w-0 space-y-1.5">
+                  <label
+                    className="flex items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium border cursor-pointer"
+                    style={{ borderColor: TOKENS.surfaceBorder, color: TOKENS.text, background: TOKENS.bg }}
+                  >
+                    Subir imagen (.jpg, .png)
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const archivo = e.target.files && e.target.files[0];
+                        if (archivo) cargarLogoTarjeta(archivo);
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
+                  <div
+                    tabIndex={0}
+                    onPaste={pegarLogoTarjeta}
+                    className="rounded-xl border border-dashed px-3 py-2 text-[11px] text-center outline-none focus:border-solid"
+                    style={{ borderColor: TOKENS.surfaceBorder, color: TOKENS.muted }}
+                  >
+                    O tocá acá y pegala con Ctrl+V
+                  </div>
+                  {formTarjeta.logo && (
+                    <button
+                      onClick={() => setFormTarjeta({ ...formTarjeta, logo: "" })}
+                      className="text-[11px] underline"
+                      style={{ color: TOKENS.danger }}
+                    >
+                      Quitar imagen
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <label className="block text-xs font-medium mb-1.5" style={{ color: TOKENS.muted }}>¿De quién es? (aparece en su app para cargar consumos)</label>
+              <div className="flex gap-2 mb-3">
+                {["Ariel", "Cielo"].map((nombrePersona) => (
+                  <button
+                    key={nombrePersona}
+                    onClick={() => setFormTarjeta({ ...formTarjeta, titular: nombrePersona })}
+                    className="flex-1 rounded-xl py-2.5 text-sm font-medium border transition-colors"
+                    style={
+                      formTarjeta.titular === nombrePersona
+                        ? { background: TOKENS.goldSoft, borderColor: TOKENS.gold, color: TOKENS.gold }
+                        : { background: TOKENS.bg, borderColor: TOKENS.surfaceBorder, color: TOKENS.muted }
+                    }
+                  >
+                    {nombrePersona}
+                  </button>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 mb-3">
+                <div>
+                  <label className="block text-xs font-medium mb-1.5" style={{ color: TOKENS.muted }}>Últimos 4 dígitos</label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={4}
+                    value={formTarjeta.ultimos4}
+                    onChange={(e) => setFormTarjeta({ ...formTarjeta, ultimos4: e.target.value.replace(/\D/g, "").slice(0, 4) })}
+                    placeholder="1234"
+                    className="w-full rounded-xl px-3.5 py-2.5 text-sm border outline-none tabular"
+                    style={{ background: TOKENS.bg, borderColor: TOKENS.surfaceBorder, color: TOKENS.text }}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1.5" style={{ color: TOKENS.muted }}>Vencimiento</label>
+                  <input
+                    type="text"
+                    value={formTarjeta.vencimiento}
+                    onChange={(e) => setFormTarjeta({ ...formTarjeta, vencimiento: e.target.value })}
+                    placeholder="MM/AA"
+                    className="w-full rounded-xl px-3.5 py-2.5 text-sm border outline-none tabular"
+                    style={{ background: TOKENS.bg, borderColor: TOKENS.surfaceBorder, color: TOKENS.text }}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-[1fr_auto] gap-3 mb-4 items-end">
+                <div>
+                  <label className="block text-xs font-medium mb-1.5" style={{ color: TOKENS.muted }}>Límite</label>
+                  <input
+                    type="number"
+                    value={formTarjeta.limite}
+                    onChange={(e) => setFormTarjeta({ ...formTarjeta, limite: e.target.value })}
+                    placeholder="0"
+                    className="w-full rounded-xl px-3.5 py-2.5 text-sm border outline-none tabular"
+                    style={{ background: TOKENS.bg, borderColor: TOKENS.surfaceBorder, color: TOKENS.text }}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1.5" style={{ color: TOKENS.muted }}>Color</label>
+                  <input
+                    type="color"
+                    value={colorValido(formTarjeta.color)}
+                    onChange={(e) => setFormTarjeta({ ...formTarjeta, color: e.target.value })}
+                    className="h-11 w-14 rounded-xl border cursor-pointer"
+                    style={{ borderColor: TOKENS.surfaceBorder, padding: 0, background: "none" }}
+                    aria-label="Color de la tarjeta"
+                  />
+                </div>
+              </div>
+
+              {errorTarjeta && (
+                <div className="rounded-xl px-3.5 py-2.5 text-xs mb-3" style={{ background: TOKENS.redSoft, color: TOKENS.danger }}>
+                  {errorTarjeta}
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                {editandoTarjetaId && (
+                  <button
+                    onClick={cancelarEdicionTarjeta}
+                    className="flex-1 rounded-full py-3 text-sm font-medium border"
+                    style={{ borderColor: TOKENS.surfaceBorder, color: TOKENS.muted }}
+                  >
+                    Cancelar
+                  </button>
+                )}
+                <button
+                  onClick={guardarTarjeta}
+                  className="flex-1 flex items-center justify-center gap-1.5 rounded-full py-3 text-sm font-medium text-white"
+                  style={{ background: TOKENS.gold }}
+                >
+                  {editandoTarjetaId ? (
+                    "Guardar cambios"
+                  ) : (
+                    <>
+                      <Plus size={14} /> Agregar tarjeta
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
             {/* Apps Móviles */}
             <div
               className="rounded-[24px] p-5 border mt-4"
@@ -2746,7 +3187,11 @@ export default function FinanzasFamiliares() {
               </div>
               <button
                 onClick={() => {
-                  setFormCarga((prev) => ({ ...prev, mesInicio: proximoMesIndex() }));
+                  setFormCarga((prev) => ({
+                    ...prev,
+                    mesInicio: proximoMesIndex(),
+                    tarjetaId: tarjetas.some((t) => t.id === prev.tarjetaId) ? prev.tarjetaId : tarjetas[0]?.id || "",
+                  }));
                   setModalNuevaCarga(true);
                 }}
                 className="flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-medium text-white shrink-0 whitespace-nowrap"
@@ -2758,7 +3203,7 @@ export default function FinanzasFamiliares() {
 
             {/* Un bloque de tabla por tarjeta */}
             <div className="space-y-6">
-              {TARJETAS.map((t) => {
+              {tarjetas.map((t) => {
                 const todosLosCargos = cargosPorTarjeta[t.id] || [];
                 // Gasto mensual de esta tarjeta: de ahí sale si el mes en que terminó un cargo figura como pagado.
                 const gastoTarjeta = gastosBase.find((g) => g.esTarjeta && g.tarjetaId === t.id);
@@ -2783,9 +3228,9 @@ export default function FinanzasFamiliares() {
                     style={{ background: TOKENS.surface, borderColor: TOKENS.surfaceBorder, boxShadow: "0 8px 24px rgba(16,23,40,0.05)" }}
                   >
                     {/* Header con degradé estilo tarjeta física */}
-                    <div className={`relative overflow-hidden bg-gradient-to-br ${t.gradiente} px-4 py-3.5`}>
+                    <div className="relative overflow-hidden px-4 py-3.5" style={{ background: gradienteDeColor(t.color) }}>
                       {/* Credicoop: franja de colores como en su logo */}
-                      {t.franja && (
+                      {(t.banco || "").toLowerCase().includes("credicoop") && (
                         <div
                           className="absolute bottom-0 left-0 right-0 h-1.5"
                           style={{ background: "linear-gradient(90deg,#EF4444,#F97316,#FACC15,#22C55E,#3B82F6,#8B5CF6)" }}
@@ -2793,21 +3238,21 @@ export default function FinanzasFamiliares() {
                       )}
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2 min-w-0">
-                          {LOGOS_BANCO[t.banco] ? (
+                          {t.logo || logoDeBanco(t.banco) ? (
                             <span className="bg-white rounded-lg p-1 shrink-0 flex items-center justify-center shadow-sm">
-                              <img src={LOGOS_BANCO[t.banco]} alt={t.banco} className="h-9 w-auto block" />
+                              <img src={t.logo || logoDeBanco(t.banco)} alt={t.banco} className="h-9 w-auto block" />
                             </span>
                           ) : (
                             <CreditCard size={16} className="text-white/90 shrink-0" />
                           )}
                           <div className="min-w-0">
                             <p className="ff-display text-sm font-semibold text-white truncate">{t.nombre}</p>
-                            <p className="text-[10px] text-white/70 truncate">{t.banco} · {t.titular}</p>
+                            <p className="text-[10px] text-white/70 truncate">{t.banco ? `${t.banco} · ` : ""}{t.titular}</p>
                           </div>
                         </div>
                         <div className="text-right shrink-0 ml-2">
-                          <p className="text-xs font-mono text-white/90 tracking-wider">•••• {t.ultimos4}</p>
-                          <p className="text-[10px] text-white/60">Vence {t.vencimiento}</p>
+                          <p className="text-xs font-mono text-white/90 tracking-wider">{t.ultimos4 ? `•••• ${t.ultimos4}` : ""}</p>
+                          <p className="text-[10px] text-white/60">{t.vencimiento ? `Vence ${t.vencimiento}` : ""}</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-2 mt-3">
@@ -3054,7 +3499,7 @@ export default function FinanzasFamiliares() {
                   className="w-full rounded-xl pl-10 pr-3 py-2.5 text-sm border outline-none appearance-none"
                   style={{ background: TOKENS.bg, borderColor: TOKENS.surfaceBorder, color: TOKENS.text }}
                 >
-                  {TARJETAS.map((t) => (
+                  {tarjetas.map((t) => (
                     <option key={t.id} value={t.id}>{t.nombre}</option>
                   ))}
                 </select>
