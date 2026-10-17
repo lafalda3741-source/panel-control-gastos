@@ -41,6 +41,8 @@ import {
   PieChart as PieChartIcon,
   Sliders,
   Sparkles,
+  ShoppingCart,
+  Trash2,
 } from "lucide-react";
 import {
   PieChart,
@@ -337,6 +339,7 @@ const SECCIONES = [
   { id: "calculos", label: "Cálculos Adicionales", icon: Calculator },
   { id: "inversion", label: "Inversión", icon: LineChart },
   { id: "configuracion", label: "Configuración", icon: Sliders },
+  { id: "cooperativa", label: "Cooperativa", icon: ShoppingCart },
 ];
 
 // ---------- Componente principal ----------
@@ -1335,6 +1338,90 @@ export default function FinanzasFamiliares() {
     setPinIngresado((prev) => prev.slice(0, -1));
   };
 
+  // ---- Lista de la Cooperativa (compartida con las apps de Ariel y Cielo) ----
+  const [itemsCoop, setItemsCoop] = useState([]);
+  const [coopCargando, setCoopCargando] = useState(false);
+  const [coopError, setCoopError] = useState(false);
+  const [nuevoProducto, setNuevoProducto] = useState("");
+  const [nuevaCantidad, setNuevaCantidad] = useState("");
+  const [nuevoAutor, setNuevoAutor] = useState("Ariel");
+  const [coopEditando, setCoopEditando] = useState(null); // { id, producto, cantidad } | null
+
+  const cargarCoop = async () => {
+    setCoopCargando(true);
+    const { data, error } = await supabase.from("lista_cooperativa").select("*").order("creado_en", { ascending: true });
+    if (error) {
+      console.error("Error cargando lista de la cooperativa:", error);
+      setCoopError(true);
+    } else {
+      setCoopError(false);
+      setItemsCoop(data || []);
+    }
+    setCoopCargando(false);
+  };
+
+  useEffect(() => {
+    if (desbloqueado && seccionActiva === "cooperativa") cargarCoop();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [desbloqueado, seccionActiva]);
+
+  const agregarItemCoop = async () => {
+    const producto = nuevoProducto.trim();
+    if (!producto) return;
+    const cantidad = nuevaCantidad.trim();
+    const { error } = await supabase
+      .from("lista_cooperativa")
+      .insert({ producto, cantidad: cantidad || null, anotado_por: nuevoAutor });
+    if (error) {
+      console.error("Error agregando producto:", error);
+      setCoopError(true);
+      return;
+    }
+    setNuevoProducto("");
+    setNuevaCantidad("");
+    cargarCoop();
+  };
+
+  const toggleItemCoop = async (item) => {
+    const nuevo = !item.comprado; // se calcula antes de actualizar el estado
+    setItemsCoop((prev) => prev.map((i) => (i.id === item.id ? { ...i, comprado: nuevo } : i)));
+    const { error } = await supabase.from("lista_cooperativa").update({ comprado: nuevo }).eq("id", item.id);
+    if (error) {
+      console.error("Error actualizando producto:", error);
+      cargarCoop();
+    }
+  };
+
+  const guardarEdicionCoop = async () => {
+    if (!coopEditando) return;
+    const producto = coopEditando.producto.trim();
+    if (!producto) return;
+    const cantidad = (coopEditando.cantidad || "").trim();
+    const { error } = await supabase
+      .from("lista_cooperativa")
+      .update({ producto, cantidad: cantidad || null })
+      .eq("id", coopEditando.id);
+    if (error) console.error("Error editando producto:", error);
+    setCoopEditando(null);
+    cargarCoop();
+  };
+
+  const borrarItemCoop = async (id) => {
+    setItemsCoop((prev) => prev.filter((i) => i.id !== id));
+    const { error } = await supabase.from("lista_cooperativa").delete().eq("id", id);
+    if (error) {
+      console.error("Error borrando producto:", error);
+      cargarCoop();
+    }
+  };
+
+  const limpiarCompradosCoop = async () => {
+    if (!window.confirm("¿Borrar todos los productos ya comprados?")) return;
+    const { error } = await supabase.from("lista_cooperativa").delete().eq("comprado", true);
+    if (error) console.error("Error limpiando comprados:", error);
+    cargarCoop();
+  };
+
   // ---- Configuración: cambiar PIN ----
   const [formPin, setFormPin] = useState({ actual: "", nuevo: "", confirmar: "" });
   const [mensajePin, setMensajePin] = useState(null); // { tipo: "ok" | "error", texto }
@@ -1704,7 +1791,7 @@ export default function FinanzasFamiliares() {
           </button>
         </div>
 
-        {seccionActiva !== "dashboard" && seccionActiva !== "tarjetas" && seccionActiva !== "gastos" && seccionActiva !== "ingresos" && seccionActiva !== "inversion" && seccionActiva !== "configuracion" && seccionActiva !== "calculos" && (
+        {seccionActiva !== "dashboard" && seccionActiva !== "tarjetas" && seccionActiva !== "gastos" && seccionActiva !== "ingresos" && seccionActiva !== "inversion" && seccionActiva !== "configuracion" && seccionActiva !== "calculos" && seccionActiva !== "cooperativa" && (
           <div
             className="rounded-3xl p-8 text-center border mt-4"
             style={{ background: TOKENS.surface, borderColor: TOKENS.surfaceBorder, boxShadow: "0 8px 24px rgba(16,23,40,0.05)" }}
@@ -1719,6 +1806,204 @@ export default function FinanzasFamiliares() {
             <p className="text-xs mt-1" style={{ color: TOKENS.muted }}>
               La armamos en el próximo paso.
             </p>
+          </div>
+        )}
+
+        {seccionActiva === "cooperativa" && (
+          <div className="mt-2">
+            <div className="flex items-start justify-between mb-6 gap-3">
+              <div>
+                <h2 className="ff-display text-xl font-semibold" style={{ color: TOKENS.text }}>
+                  Cooperativa
+                </h2>
+                <p className="text-xs mt-1" style={{ color: TOKENS.muted }}>
+                  Lista de compras compartida con las apps de Ariel y Cielo.
+                </p>
+              </div>
+              <button
+                onClick={cargarCoop}
+                className="flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-medium shrink-0 whitespace-nowrap border"
+                style={{ color: TOKENS.muted, borderColor: TOKENS.surfaceBorder, background: TOKENS.surface }}
+              >
+                <RefreshCw size={13} className={coopCargando ? "animate-spin" : ""} /> Actualizar
+              </button>
+            </div>
+
+            <div
+              className="rounded-2xl p-4 mb-6 border"
+              style={{ background: TOKENS.surface, borderColor: TOKENS.surfaceBorder }}
+            >
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-2">
+                <input
+                  type="text"
+                  value={nuevoProducto}
+                  onChange={(e) => setNuevoProducto(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && agregarItemCoop()}
+                  placeholder="Producto (ej: aceite, fideos...)"
+                  className="md:col-span-5 rounded-xl px-4 py-3 text-sm outline-none border"
+                  style={{ background: TOKENS.bg, color: TOKENS.text, borderColor: TOKENS.surfaceBorder }}
+                />
+                <input
+                  type="text"
+                  value={nuevaCantidad}
+                  onChange={(e) => setNuevaCantidad(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && agregarItemCoop()}
+                  placeholder="Cantidad (opcional)"
+                  className="md:col-span-3 rounded-xl px-4 py-3 text-sm outline-none border"
+                  style={{ background: TOKENS.bg, color: TOKENS.text, borderColor: TOKENS.surfaceBorder }}
+                />
+                <select
+                  value={nuevoAutor}
+                  onChange={(e) => setNuevoAutor(e.target.value)}
+                  className="md:col-span-2 rounded-xl px-3 py-3 text-sm outline-none border"
+                  style={{ background: TOKENS.bg, color: TOKENS.text, borderColor: TOKENS.surfaceBorder }}
+                  aria-label="Quién anota"
+                >
+                  <option value="Ariel">Ariel</option>
+                  <option value="Cielo">Cielo</option>
+                </select>
+                <button
+                  onClick={agregarItemCoop}
+                  disabled={!nuevoProducto.trim()}
+                  className="md:col-span-2 flex items-center justify-center gap-1.5 rounded-xl px-4 py-3 text-sm font-medium text-white disabled:opacity-40"
+                  style={{ background: TOKENS.gold }}
+                >
+                  <Plus size={16} /> Agregar
+                </button>
+              </div>
+            </div>
+
+            {coopError && (
+              <p className="text-sm mb-3 px-1" style={{ color: TOKENS.danger }}>
+                No se pudo conectar con la lista. Probá tocar "Actualizar".
+              </p>
+            )}
+            {coopCargando && itemsCoop.length === 0 && (
+              <p className="text-center text-sm py-6" style={{ color: TOKENS.muted }}>Cargando lista...</p>
+            )}
+            {!coopCargando && !coopError && itemsCoop.length === 0 && (
+              <div
+                className="text-center py-10 text-sm rounded-2xl border"
+                style={{ color: TOKENS.muted, borderColor: TOKENS.surfaceBorder, background: TOKENS.surface }}
+              >
+                Todavía no hay nada anotado.
+              </div>
+            )}
+
+            {(() => {
+              const pendientes = itemsCoop.filter((i) => !i.comprado);
+              const comprados = itemsCoop.filter((i) => i.comprado);
+              const fila = (item, i, total) => {
+                const editando = coopEditando && coopEditando.id === item.id;
+                return (
+                  <div
+                    key={item.id}
+                    className="flex items-center gap-3 px-4 py-3"
+                    style={i < total - 1 ? { borderBottom: `1px solid ${TOKENS.surfaceBorder}` } : undefined}
+                  >
+                    <button
+                      onClick={() => toggleItemCoop(item)}
+                      className="h-6 w-6 rounded-full flex items-center justify-center shrink-0"
+                      style={item.comprado ? { background: TOKENS.gold } : { border: `2px solid ${TOKENS.surfaceBorder}` }}
+                      aria-label={item.comprado ? "Marcar como pendiente" : "Marcar como comprado"}
+                    >
+                      {item.comprado && <Check size={13} color="#fff" />}
+                    </button>
+                    {editando ? (
+                      <div className="flex-1 min-w-0 flex flex-wrap items-center gap-2">
+                        <input
+                          type="text"
+                          value={coopEditando.producto}
+                          onChange={(e) => setCoopEditando({ ...coopEditando, producto: e.target.value })}
+                          className="flex-1 min-w-[140px] rounded-lg px-3 py-2 text-sm outline-none border"
+                          style={{ background: TOKENS.bg, color: TOKENS.text, borderColor: TOKENS.surfaceBorder }}
+                        />
+                        <input
+                          type="text"
+                          value={coopEditando.cantidad}
+                          onChange={(e) => setCoopEditando({ ...coopEditando, cantidad: e.target.value })}
+                          placeholder="Cantidad"
+                          className="w-32 rounded-lg px-3 py-2 text-sm outline-none border"
+                          style={{ background: TOKENS.bg, color: TOKENS.text, borderColor: TOKENS.surfaceBorder }}
+                        />
+                        <button
+                          onClick={guardarEdicionCoop}
+                          className="rounded-lg px-3 py-2 text-xs font-medium text-white"
+                          style={{ background: TOKENS.gold }}
+                        >
+                          Guardar
+                        </button>
+                        <button
+                          onClick={() => setCoopEditando(null)}
+                          className="rounded-lg px-3 py-2 text-xs font-medium border"
+                          style={{ color: TOKENS.muted, borderColor: TOKENS.surfaceBorder }}
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex-1 min-w-0">
+                          <p
+                            className="text-sm font-medium break-words"
+                            style={{ color: item.comprado ? TOKENS.muted : TOKENS.text, textDecoration: item.comprado ? "line-through" : "none" }}
+                          >
+                            {item.producto}
+                            {item.cantidad ? <span style={{ color: TOKENS.muted }} className="font-normal"> · {item.cantidad}</span> : null}
+                          </p>
+                          {item.anotado_por && (
+                            <p className="text-xs" style={{ color: TOKENS.muted }}>Anotó {item.anotado_por}</p>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => setCoopEditando({ id: item.id, producto: item.producto, cantidad: item.cantidad || "" })}
+                          className="h-8 w-8 rounded-lg flex items-center justify-center"
+                          style={{ color: TOKENS.muted }}
+                          aria-label="Editar"
+                        >
+                          <Pencil size={15} />
+                        </button>
+                        <button
+                          onClick={() => borrarItemCoop(item.id)}
+                          className="h-8 w-8 rounded-lg flex items-center justify-center"
+                          style={{ color: TOKENS.muted }}
+                          aria-label="Borrar"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                );
+              };
+              return (
+                <>
+                  {pendientes.length > 0 && (
+                    <div className="mb-6">
+                      <p className="text-sm font-semibold mb-2 px-1" style={{ color: TOKENS.text }}>
+                        Para comprar ({pendientes.length})
+                      </p>
+                      <div className="rounded-2xl border overflow-hidden" style={{ background: TOKENS.surface, borderColor: TOKENS.surfaceBorder }}>
+                        {pendientes.map((it, i) => fila(it, i, pendientes.length))}
+                      </div>
+                    </div>
+                  )}
+                  {comprados.length > 0 && (
+                    <div className="mb-6">
+                      <div className="flex items-center justify-between mb-2 px-1">
+                        <p className="text-sm font-semibold" style={{ color: TOKENS.text }}>Comprados ({comprados.length})</p>
+                        <button onClick={limpiarCompradosCoop} className="text-xs font-medium" style={{ color: TOKENS.danger }}>
+                          Limpiar comprados
+                        </button>
+                      </div>
+                      <div className="rounded-2xl border overflow-hidden" style={{ background: TOKENS.surface, borderColor: TOKENS.surfaceBorder }}>
+                        {comprados.map((it, i) => fila(it, i, comprados.length))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </div>
         )}
 
