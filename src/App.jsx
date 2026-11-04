@@ -324,10 +324,10 @@ function totalTarjetaEnMes(cargosTarjeta, mesIndex) {
 }
 
 const fmt = (n) =>
-  n.toLocaleString("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 });
+  n.toLocaleString("es-AR", { style: "currency", currency: "ARS", minimumFractionDigits: 0, maximumFractionDigits: 2 });
 
 const fmtUSD = (n) =>
-  n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  n.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0, maximumFractionDigits: 2 });
 
 const fmtMoneda = (n, moneda) => (moneda === "USD" ? fmtUSD(n) : fmt(n));
 
@@ -935,7 +935,7 @@ export default function FinanzasFamiliares() {
       const porc = Number(s.aumentoPorc);
       if (!porc) return prev;
       const montoAnterior = montoDelMes(s.montosPorMes, mesIndex);
-      const nuevoMonto = Math.round(montoAnterior * (1 + porc / 100));
+      const nuevoMonto = Math.round(montoAnterior * (1 + porc / 100) * 100) / 100;
       const nuevosMontos = conMontoDesdeMes(s.montosPorMes, mesIndex, nuevoMonto);
       const nuevosAumentos = { ...s.aumentosPorMes, [mesIndex]: { porc, anterior: montoAnterior, nuevo: nuevoMonto } };
       supabase
@@ -1231,7 +1231,7 @@ export default function FinanzasFamiliares() {
     if (!formCarga.descripcion.trim() || !formCarga.montoTotal) return;
     const esCuotas = formCarga.tipo === "cuotas";
     const cuotas = esCuotas ? Number(formCarga.cantidadCuotas) || 1 : null;
-    const montoPorMes = esCuotas ? Number(formCarga.montoTotal) / cuotas : Number(formCarga.montoTotal);
+    const montoPorMes = Math.round((esCuotas ? Number(formCarga.montoTotal) / cuotas : Number(formCarga.montoTotal)) * 100) / 100;
     const mesInicio = Number(formCarga.mesInicio) || 0;
 
     const nuevo = {
@@ -1523,7 +1523,7 @@ export default function FinanzasFamiliares() {
       {editandoGasto === `${g.id}:monto` && !g.esTarjeta ? (
         <input
           autoFocus
-          type="number"
+          type="number" step="any" inputMode="decimal"
           defaultValue={g.monto}
           onBlur={(e) => {
             const n = Number(e.target.value);
@@ -1693,7 +1693,7 @@ export default function FinanzasFamiliares() {
                 className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm transition-colors border"
                 style={
                   activa
-                    ? { background: TOKENS.goldSoft, color: TOKENS.gold, borderColor: "rgba(201,162,75,0.3)" }
+                    ? { background: TOKENS.goldSoft, color: TOKENS.gold, borderColor: "transparent", fontWeight: 600 }
                     : { color: TOKENS.muted, borderColor: "transparent" }
                 }
               >
@@ -1769,25 +1769,25 @@ export default function FinanzasFamiliares() {
           <button
             onClick={() => setMesIndex((i) => Math.max(0, i - 1))}
             disabled={mesIndex === 0}
-            className="h-12 w-12 rounded-full flex items-center justify-center border transition-colors disabled:opacity-30"
+            className="h-10 w-10 rounded-full flex items-center justify-center border transition-colors disabled:opacity-30"
             style={{ borderColor: TOKENS.surfaceBorder, background: TOKENS.surface }}
             aria-label="Mes anterior"
           >
-            <ChevronLeft size={24} style={{ color: TOKENS.muted }} />
+            <ChevronLeft size={20} style={{ color: TOKENS.muted }} />
           </button>
           <span
-            className="ff-display text-xl md:text-2xl font-semibold px-8 py-3 rounded-full min-w-[200px] text-center"
+            className="ff-display text-lg md:text-xl font-semibold px-6 py-2.5 rounded-full min-w-[180px] text-center"
             style={{ background: TOKENS.goldSoft, color: TOKENS.gold }}
           >
             {nombreMes(mesIndex)}
           </span>
           <button
             onClick={() => setMesIndex((i) => i + 1)}
-            className="h-12 w-12 rounded-full flex items-center justify-center border transition-colors disabled:opacity-30"
+            className="h-10 w-10 rounded-full flex items-center justify-center border transition-colors disabled:opacity-30"
             style={{ borderColor: TOKENS.surfaceBorder, background: TOKENS.surface }}
             aria-label="Mes siguiente"
           >
-            <ChevronRight size={24} style={{ color: TOKENS.muted }} />
+            <ChevronRight size={20} style={{ color: TOKENS.muted }} />
           </button>
         </div>
 
@@ -2027,6 +2027,27 @@ export default function FinanzasFamiliares() {
               </button>
             </div>
 
+            {(() => {
+              const baseSueldos = ingresoArielMes + ingresoCieloMes;
+              const pA = baseSueldos > 0 ? (ingresoArielMes / baseSueldos) * 100 : 50;
+              return (
+                <div className="rounded-2xl px-4 py-3 border mb-4" style={{ background: TOKENS.surface, borderColor: TOKENS.surfaceBorder }}>
+                  <div className="flex items-center justify-between text-xs mb-1.5" style={{ color: TOKENS.muted }}>
+                    <span>Cuánto aporta cada sueldo al total</span>
+                    <span className="tabular font-semibold" style={{ color: TOKENS.text }}>{fmt(ingresosTotalesMes)}</span>
+                  </div>
+                  <div className="flex h-3 rounded-full overflow-hidden mb-1.5">
+                    <div style={{ width: `${pA}%`, background: "#2563EB" }} />
+                    <div style={{ width: `${100 - pA}%`, background: "#8B5CF6" }} />
+                  </div>
+                  <div className="flex justify-between text-xs" style={{ color: TOKENS.text }}>
+                    <span><b style={{ color: "#2563EB" }}>Ariel</b> {Math.round(pA)}%</span>
+                    <span><b style={{ color: "#8B5CF6" }}>Cielo</b> {Math.round(100 - pA)}%</span>
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* Dos tarjetas de sueldo, estilo "Salario base / Aumento / Proyectado / Aporte" */}
             <div className="space-y-4 mb-6">
               {Object.entries(sueldos).map(([key, s]) => {
@@ -2073,7 +2094,7 @@ export default function FinanzasFamiliares() {
                       {editandoSueldo === key ? (
                         <input
                           autoFocus
-                          type="number"
+                          type="number" step="any" inputMode="decimal"
                           defaultValue={montoMes}
                           onBlur={(e) => {
                             const n = Number(e.target.value);
@@ -2204,7 +2225,7 @@ export default function FinanzasFamiliares() {
                       {editandoIngresoExtra === `${ig.id}:monto` ? (
                         <input
                           autoFocus
-                          type="number"
+                          type="number" step="any" inputMode="decimal"
                           defaultValue={ig.monto}
                           onBlur={(e) => {
                             const n = Number(e.target.value);
@@ -2281,7 +2302,7 @@ export default function FinanzasFamiliares() {
 
               <label className="block text-xs font-medium mb-1.5" style={{ color: TOKENS.muted }}>Monto mensual</label>
               <input
-                type="number"
+                type="number" step="any" inputMode="decimal"
                 value={formIngreso.monto}
                 onChange={(e) => setFormIngreso({ ...formIngreso, monto: e.target.value })}
                 placeholder="0"
@@ -2329,6 +2350,15 @@ export default function FinanzasFamiliares() {
               const saldoRestanteGeneral = ingresosTotalesMes - totalGeneral;
               return (
                 <>
+                  <div className="rounded-2xl px-4 py-3 border mb-2" style={{ background: TOKENS.surface, borderColor: TOKENS.surfaceBorder }}>
+                    <div className="flex items-center justify-between text-xs mb-1.5" style={{ color: TOKENS.muted }}>
+                      <span>Avance de pagos</span>
+                      <span className="tabular font-semibold" style={{ color: TOKENS.text }}>{totalGeneral > 0 ? Math.round((pagadoGeneral / totalGeneral) * 100) : 0}%</span>
+                    </div>
+                    <div className="h-2.5 rounded-full overflow-hidden" style={{ background: TOKENS.surfaceBorder }}>
+                      <div className="h-full rounded-full" style={{ width: `${totalGeneral > 0 ? Math.min(100, (pagadoGeneral / totalGeneral) * 100) : 0}%`, background: TOKENS.green }} />
+                    </div>
+                  </div>
                   <div className="grid grid-cols-3 gap-2 mb-2">
                     <div className="rounded-2xl px-3 py-3 border text-center" style={{ background: TOKENS.surface, borderColor: TOKENS.surfaceBorder }}>
                       <p className="text-xs mb-1" style={{ color: TOKENS.muted }}>Total</p>
@@ -2446,7 +2476,7 @@ export default function FinanzasFamiliares() {
 
               <label className="block text-xs font-medium mb-1.5" style={{ color: TOKENS.muted }}>Monto mensual</label>
               <input
-                type="number"
+                type="number" step="any" inputMode="decimal"
                 value={formGasto.monto}
                 onChange={(e) => setFormGasto({ ...formGasto, monto: e.target.value })}
                 placeholder="0"
@@ -2536,7 +2566,7 @@ export default function FinanzasFamiliares() {
                       Monto Inicial (ej. Aguinaldo)
                     </label>
                     <input
-                      type="number"
+                      type="number" step="any" inputMode="decimal"
                       value={cuadro.montoInicial}
                       onChange={(e) => actualizarCuadroCalculo(cuadro.id, "montoInicial", e.target.value === "" ? "" : Number(e.target.value))}
                       placeholder="0"
@@ -2568,7 +2598,7 @@ export default function FinanzasFamiliares() {
                             style={{ color: TOKENS.text, borderColor: TOKENS.surfaceBorder, background: TOKENS.bg }}
                           />
                           <input
-                            type="number"
+                            type="number" step="any" inputMode="decimal"
                             value={f.importe}
                             onChange={(e) => actualizarFilaCalculo(cuadro.id, f.id, "importe", e.target.value === "" ? "" : Number(e.target.value))}
                             placeholder="0"
@@ -2705,7 +2735,7 @@ export default function FinanzasFamiliares() {
                     {editandoInversion === `${inv.id}:monto` && inv.historial.length === 0 ? (
                       <input
                         autoFocus
-                        type="number"
+                        type="number" step="any" inputMode="decimal"
                         defaultValue={inv.monto}
                         onBlur={(e) => {
                           const n = Number(e.target.value);
@@ -2767,7 +2797,7 @@ export default function FinanzasFamiliares() {
                         <div className="flex-1">
                           <label className="text-[10px] block mb-1" style={{ color: TOKENS.muted }}>Valor total del fondo</label>
                           <input
-                            type="number"
+                            type="number" step="any" inputMode="decimal"
                             placeholder="0"
                             value={formHistorial.valor}
                             onChange={(e) => setFormHistorial({ ...formHistorial, valor: e.target.value })}
@@ -2926,7 +2956,7 @@ export default function FinanzasFamiliares() {
 
               <label className="block text-xs font-medium mb-1.5" style={{ color: TOKENS.muted }}>Monto</label>
               <input
-                type="number"
+                type="number" step="any" inputMode="decimal"
                 value={formInversion.monto}
                 onChange={(e) => setFormInversion({ ...formInversion, monto: e.target.value })}
                 placeholder="0"
@@ -3283,7 +3313,7 @@ export default function FinanzasFamiliares() {
                 <div>
                   <label className="block text-xs font-medium mb-1.5" style={{ color: TOKENS.muted }}>Límite</label>
                   <input
-                    type="number"
+                    type="number" step="any" inputMode="decimal"
                     value={formTarjeta.limite}
                     onChange={(e) => setFormTarjeta({ ...formTarjeta, limite: e.target.value })}
                     placeholder="0"
@@ -3673,7 +3703,7 @@ export default function FinanzasFamiliares() {
                                     ) : editando === claveEdicion ? (
                                       <input
                                         autoFocus
-                                        type="number"
+                                        type="number" step="any" inputMode="decimal"
                                         defaultValue={c.monto}
                                         onMouseDown={(e) => e.stopPropagation()}
                                         onBlur={(e) => {
@@ -3848,7 +3878,7 @@ export default function FinanzasFamiliares() {
                     {formCarga.tipo === "cuotas" ? "Monto total de la compra" : "Monto mensual"}
                   </label>
                   <input
-                    type="number"
+                    type="number" step="any" inputMode="decimal"
                     value={formCarga.montoTotal}
                     onChange={(e) => setFormCarga({ ...formCarga, montoTotal: e.target.value })}
                     placeholder="0"
@@ -3895,40 +3925,98 @@ export default function FinanzasFamiliares() {
 
         {seccionActiva === "dashboard" && (
         <>
-        {/* KPIs del mes — 6 tarjetas: ingresos, gastos, saldo, aportes y gastos pagados */}
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-6">
-          {[
-            { label: "Ingresos totales", valor: fmt(ingresosTotalesMes), nota: "Salarios con aumento", icono: TrendingUp, color: TOKENS.green, fondo: TOKENS.greenSoft },
-            { label: "Gastos totales", valor: fmt(gastosTotalesMes), nota: `Tarjetas: ${fmt(gastosTarjetasMes)}`, icono: TrendingDown, color: TOKENS.danger, fondo: TOKENS.redSoft },
-            { label: "Saldo del mes", valor: fmt(ahorroProyectado), nota: "Ingresos - Gastos totales", icono: Wallet, color: ahorroProyectado >= 0 ? TOKENS.gold : TOKENS.danger, fondo: ahorroProyectado >= 0 ? TOKENS.goldSoft : TOKENS.redSoft },
-            { label: "Aporte Ariel", valor: fmt(aporteAriel), nota: "Parte de los gastos según su ingreso", icono: RefreshCw, color: TOKENS.blue, fondo: TOKENS.purpleSoft },
-            { label: "Aporte Cielo", valor: fmt(aporteCielo), nota: "Parte de los gastos según su ingreso", icono: RefreshCw, color: TOKENS.gold, fondo: TOKENS.goldSoft },
-            { label: "Gastos pagados", valor: fmt(pagadoMes), nota: `De ${fmt(gastosTotalesMes)} del mes`, icono: CheckCircle2, color: TOKENS.green, fondo: TOKENS.greenSoft },
-          ].map((kpi, i) => {
-            const Icono = kpi.icono;
-            return (
-              <div
-                key={i}
-                className="rounded-2xl p-4 border"
-                style={{ background: TOKENS.surface, borderColor: TOKENS.surfaceBorder, boxShadow: "0 8px 24px rgba(15,23,42,0.04)" }}
-              >
+        {/* Resumen del mes: saldo protagonista + aportes + plata que se libera */}
+        {(() => {
+          const pctPagado = gastosTotalesMes > 0 ? Math.min(100, (pagadoMes / gastosTotalesMes) * 100) : 0;
+          const totalAportes = aporteAriel + aporteCielo;
+          const pctAriel = totalAportes > 0 ? (aporteAriel / totalAportes) * 100 : 50;
+          const liberan = [];
+          tarjetas.forEach((t) =>
+            (cargosPorTarjeta[t.id] || []).forEach((c) => {
+              if (c.cuotaTotal == null) return;
+              const ultimo = (c.mesInicio || 0) + c.cuotaTotal - 1;
+              if (ultimo >= mesIndex && ultimo <= mesIndex + 5) liberan.push({ id: c.id, nombre: c.nombre, tarjeta: t.nombre, monto: c.monto, ultimo });
+            })
+          );
+          liberan.sort((x, y) => x.ultimo - y.ultimo);
+          const cardEstilo = { background: TOKENS.surface, borderColor: TOKENS.surfaceBorder, boxShadow: "0 8px 24px rgba(15,23,42,0.05)" };
+          return (
+            <>
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
                 <div
-                  className="h-9 w-9 rounded-xl flex items-center justify-center mb-3"
-                  style={{ background: kpi.fondo }}
+                  className="lg:col-span-2 rounded-[28px] p-6 text-white"
+                  style={{ background: `linear-gradient(135deg, ${TOKENS.gold}, #134E4A)` }}
                 >
-                  <Icono size={16} style={{ color: kpi.color }} />
+                  <p className="text-xs font-semibold tracking-wide opacity-90">SALDO DEL MES</p>
+                  <p className="ff-display tabular text-4xl md:text-5xl font-bold mt-1 mb-1">{fmt(ahorroProyectado)}</p>
+                  <p className="text-sm mb-5">
+                    {ahorroProyectado >= 0
+                      ? `Si pagás todo lo del mes, te sobran ${fmt(ahorroProyectado)}.`
+                      : `Los gastos superan a los ingresos por ${fmt(-ahorroProyectado)}.`}
+                  </p>
+                  <div className="h-3.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.25)" }}>
+                    <div className="h-full rounded-full bg-white" style={{ width: `${pctPagado}%` }} />
+                  </div>
+                  <div className="flex items-center justify-between text-xs mt-2 tabular">
+                    <span>Pagado {fmt(pagadoMes)} ({Math.round(pctPagado)}%)</span>
+                    <span>Falta pagar {fmt(pendienteMes)}</span>
+                  </div>
                 </div>
-                <p className="text-[10px] font-semibold tracking-wide mb-1" style={{ color: TOKENS.muted }}>
-                  {kpi.label.toUpperCase()}
-                </p>
-                <p className="ff-display tabular text-xl font-bold mb-1" style={{ color: kpi.color }}>
-                  {kpi.valor}
-                </p>
-                <p className="text-xs" style={{ color: TOKENS.muted }}>{kpi.nota}</p>
+
+                <div className="rounded-[28px] p-5 border" style={cardEstilo}>
+                  <h2 className="ff-display text-base font-bold mb-4" style={{ color: TOKENS.text }}>Quién aporta cuánto</h2>
+                  <div className="flex h-4 rounded-full overflow-hidden mb-4">
+                    <div style={{ width: `${pctAriel}%`, background: "#2563EB" }} />
+                    <div style={{ width: `${100 - pctAriel}%`, background: "#8B5CF6" }} />
+                  </div>
+                  <div className="flex items-center justify-between text-sm mb-2">
+                    <span style={{ color: TOKENS.text }}><b style={{ color: "#2563EB" }}>Ariel</b> · {Math.round(pctAriel)}%</span>
+                    <b className="tabular" style={{ color: TOKENS.text }}>{fmt(aporteAriel)}</b>
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span style={{ color: TOKENS.text }}><b style={{ color: "#8B5CF6" }}>Cielo</b> · {Math.round(100 - pctAriel)}%</span>
+                    <b className="tabular" style={{ color: TOKENS.text }}>{fmt(aporteCielo)}</b>
+                  </div>
+                  <p className="text-xs mt-3" style={{ color: TOKENS.muted }}>Parte de los gastos según el ingreso de cada uno.</p>
+                </div>
               </div>
-            );
-          })}
-        </div>
+
+              <div className="grid grid-cols-2 gap-3 mb-6">
+                <div className="rounded-2xl p-4 border" style={cardEstilo}>
+                  <div className="flex items-center gap-2 mb-1">
+                    <TrendingUp size={15} style={{ color: TOKENS.green }} />
+                    <p className="text-xs font-medium" style={{ color: TOKENS.muted }}>Ingresos totales</p>
+                  </div>
+                  <p className="ff-display tabular text-xl font-bold" style={{ color: TOKENS.green }}>{fmt(ingresosTotalesMes)}</p>
+                </div>
+                <div className="rounded-2xl p-4 border" style={cardEstilo}>
+                  <div className="flex items-center gap-2 mb-1">
+                    <TrendingDown size={15} style={{ color: TOKENS.danger }} />
+                    <p className="text-xs font-medium" style={{ color: TOKENS.muted }}>Gastos totales</p>
+                  </div>
+                  <p className="ff-display tabular text-xl font-bold" style={{ color: TOKENS.danger }}>{fmt(gastosTotalesMes)}</p>
+                  <p className="text-xs mt-0.5" style={{ color: TOKENS.muted }}>Tarjetas: {fmt(gastosTarjetasMes)}</p>
+                </div>
+              </div>
+
+              {liberan.length > 0 && (
+                <div className="rounded-[28px] p-5 mb-6 border" style={cardEstilo}>
+                  <h2 className="ff-display text-base font-bold" style={{ color: TOKENS.text }}>Plata que se libera</h2>
+                  <p className="text-xs mb-2" style={{ color: TOKENS.muted }}>Cuotas que terminan en los próximos meses</p>
+                  {liberan.slice(0, 5).map((l, i) => (
+                    <div key={l.id} className="flex items-center justify-between py-2.5" style={{ borderTop: i === 0 ? "none" : `1px solid ${TOKENS.surfaceBorder}` }}>
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold truncate" style={{ color: TOKENS.text }}>{l.nombre} ({l.tarjeta})</p>
+                        <p className="text-xs" style={{ color: TOKENS.muted }}>Última cuota en {nombreMes(l.ultimo)}</p>
+                      </div>
+                      <span className="text-sm font-bold tabular shrink-0 ml-3" style={{ color: TOKENS.green }}>+{fmt(l.monto)}/mes</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          );
+        })()}
 
         {/* Distribución por categoría — dona */}
         <div
